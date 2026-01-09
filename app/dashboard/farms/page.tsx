@@ -75,7 +75,7 @@ export default function FarmsPage() {
 
     const checkUserRole = async () => {
         const { data: { session } } = await supabase.auth.getSession()
-        if (!activeOrg?.id) return
+        if (!session || !activeOrg?.id) return
 
         const { data: userData } = await supabase
             .from('users')
@@ -127,8 +127,8 @@ export default function FarmsPage() {
         }
 
         filtered.sort((a, b) => {
-            const aValue = a[sortBy]
-            const bValue = b[sortBy]
+            const aValue = a[sortBy] ?? ''
+            const bValue = b[sortBy] ?? ''
             if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1
             if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1
             return 0

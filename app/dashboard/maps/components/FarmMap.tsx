@@ -97,7 +97,7 @@ export default function FarmMap({ farms }: FarmMapProps) {
 
             // Fit map to show all markers
             if (bounds.length > 0) {
-                map.fitBounds(bounds, { padding: [50, 50] })
+                map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50] })
             }
         }
 

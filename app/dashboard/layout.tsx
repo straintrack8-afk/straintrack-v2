@@ -91,10 +91,13 @@ export default function DashboardLayout({
                     .eq('user_id', userData.id)
 
                 if (userOrgs) {
-                    const orgsWithRole = userOrgs.map(uo => ({
-                        ...uo.organizations,
-                        role: uo.role
-                    })) as OrganizationWithRole[]
+                    const orgsWithRole = userOrgs.map(uo => {
+                        const org = Array.isArray(uo.organizations) ? uo.organizations[0] : uo.organizations
+                        return {
+                            ...org,
+                            role: uo.role
+                        }
+                    }) as OrganizationWithRole[]
 
                     setOrganizations(orgsWithRole)
                     if (orgsWithRole.length > 0) {
