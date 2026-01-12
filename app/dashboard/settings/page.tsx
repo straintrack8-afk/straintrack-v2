@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { User, Building2, Users, Settings as SettingsIcon, Copy, Check, Mail, UserPlus, Shield, Trash2, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
@@ -9,6 +9,7 @@ const SUPER_ADMIN_EMAILS = new Set(['straintrack8@gmail.com'])
 
 export default function SettingsPage() {
     const router = useRouter()
+    const searchParams = useSearchParams()
     const supabase = createClient()
 
     const [user, setUser] = useState<any>(null)
@@ -17,7 +18,10 @@ export default function SettingsPage() {
     const [isSuperAdmin, setIsSuperAdmin] = useState(false)
     const [isAdmin, setIsAdmin] = useState(false)
     const [allOrgs, setAllOrgs] = useState<any[]>([])
-    const [activeTab, setActiveTab] = useState('profile')
+
+    // Get active tab from URL or default to 'profile'
+    const activeTab = searchParams.get('tab') || 'profile'
+
     const [copied, setCopied] = useState(false)
     const [loading, setLoading] = useState(true)
 
@@ -329,7 +333,7 @@ export default function SettingsPage() {
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
+                            onClick={() => router.push(`/dashboard/settings?tab=${tab.id}`)}
                             className={`
                 flex items-center py-4 px-1 border-b-2 font-medium text-sm transition
                 ${activeTab === tab.id
