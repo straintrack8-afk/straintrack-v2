@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User, Building2, Users, Settings as SettingsIcon, Copy, Check, Mail, UserPlus, Shield, Trash2, X, AlertCircle } from 'lucide-react'
+import { User, Building2, Users, Settings as SettingsIcon, Copy, Check, Mail, UserPlus, Shield, Trash2, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SUPER_ADMIN_EMAILS = new Set(['straintrack8@gmail.com'])
 
@@ -28,6 +28,12 @@ export default function SettingsPage() {
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
     const [deleting, setDeleting] = useState(false)
     const [promoting, setPromoting] = useState<string | null>(null)
+
+    // Super Admin states
+    const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null)
+    const [orgMembers, setOrgMembers] = useState<Record<string, any[]>>({})
+    const [loadingOrgMembers, setLoadingOrgMembers] = useState<string | null>(null)
+    const [deleteOrgConfirm, setDeleteOrgConfirm] = useState<string | null>(null)
 
     useEffect(() => {
         loadSettings()
@@ -77,7 +83,7 @@ export default function SettingsPage() {
             // Load members
             const { data: membersData } = await supabase
                 .from('user_organizations')
-                .select('*, users(id, email, full_name)')
+                .select('*, users(id, email, full_name, last_sign_in_at)')
                 .eq('organization_id', userData.organization_id)
 
             setMembers(membersData || [])
@@ -199,6 +205,96 @@ export default function SettingsPage() {
         } finally {
             setDeleting(false)
         }
+    }
+
+    // Super Admin Actions
+    const handleExpandOrg = async (orgId: string) => {
+        if (expandedOrgId === orgId) {
+            setExpandedOrgId(null)
+            return
+        }
+
+        setExpandedOrgId(orgId)
+
+        if (!orgMembers[orgId]) {
+            setLoadingOrgMembers(orgId)
+            try {
+                const { data } = await supabase
+                    .from('user_organizations')
+                    .select('*, users(id, email, full_name, last_sign_in_at)')
+                    .eq('organization_id', orgId)
+
+                setOrgMembers(prev => ({
+                    ...prev,
+                    [orgId]: data || []
+                }))
+            } catch (error) {
+                console.error('Error loading org members:', error)
+            } finally {
+                setLoadingOrgMembers(null)
+            }
+        }
+    }
+
+    const handleDeleteOrg = async (orgId: string) => {
+        try {
+            const response = await fetch('/api/admin/organizations/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ organizationId: orgId })
+            })
+
+            if (!response.ok) throw new Error('Failed to delete organization')
+
+            setDeleteOrgConfirm(null)
+            setExpandedOrgId(null) // Collapse if open
+            // Refresh list
+            const { data: orgsData } = await supabase
+                .from('organizations')
+                .select('*, users!organizations_created_by_fkey(email)')
+                .order('name')
+            setAllOrgs(orgsData || [])
+
+            alert('Organization deleted successfully')
+        } catch (error) {
+            console.error('Delete org error:', error)
+            alert('Failed to delete organization')
+        }
+    }
+
+    const handleDeleteOrgMember = async (userId: string, orgId: string) => {
+        if (!confirm('Are you sure you want to remove this member?')) return
+
+        try {
+            const response = await fetch('/api/admin/members/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, organizationId: orgId })
+            })
+
+            if (!response.ok) throw new Error('Failed to delete member')
+
+            // Refresh local state for this org
+            const { data } = await supabase
+                .from('user_organizations')
+                .select('*, users(id, email, full_name, last_sign_in_at)')
+                .eq('organization_id', orgId)
+
+            setOrgMembers(prev => ({
+                ...prev,
+                [orgId]: data || []
+            }))
+
+            alert('Member removed successfully')
+        } catch (error) {
+            console.error('Error removing member:', error)
+            alert('Failed to remove member')
+        }
+    }
+
+    const formatDate = (dateString?: string) => {
+        if (!dateString) return 'Never'
+        return new Date(dateString).toLocaleString()
     }
 
     if (loading) {
@@ -370,6 +466,9 @@ export default function SettingsPage() {
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Joined
                                         </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Last Active
+                                        </th>
                                         {isAdmin && (
                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
@@ -393,14 +492,17 @@ export default function SettingsPage() {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${member.role === 'admin'
-                                                        ? 'bg-primary-100 text-primary-800'
-                                                        : 'bg-gray-100 text-gray-800'
+                                                    ? 'bg-primary-100 text-primary-800'
+                                                    : 'bg-gray-100 text-gray-800'
                                                     }`}>
                                                     {member.role}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {new Date(member.joined_at).toLocaleDateString()}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {formatDate(member.users?.last_sign_in_at)}
                                             </td>
                                             {isAdmin && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
@@ -550,6 +652,7 @@ export default function SettingsPage() {
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
+                                    <th className="w-10"></th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Organization Name
                                     </th>
@@ -562,30 +665,151 @@ export default function SettingsPage() {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Created At
                                     </th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Actions
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
                                 {allOrgs.map((org) => (
-                                    <tr key={org.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm font-medium text-gray-900">{org.name}</div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm font-mono text-gray-900">{org.share_code}</div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">{org.users?.email || 'N/A'}</div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {new Date(org.created_at).toLocaleDateString()}
-                                        </td>
-                                    </tr>
+                                    <>
+                                        <tr key={org.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => handleExpandOrg(org.id)}>
+                                            <td className="px-6 py-4">
+                                                {expandedOrgId === org.id ? (
+                                                    <ChevronUp className="w-4 h-4 text-gray-400" />
+                                                ) : (
+                                                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm font-medium text-gray-900">{org.name}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm font-mono text-gray-900">{org.share_code}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm text-gray-900">{org.users?.email || 'N/A'}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {new Date(org.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setDeleteOrgConfirm(org.id)
+                                                    }}
+                                                    className="text-red-600 hover:text-red-900 p-2 hover:bg-red-50 rounded-lg transition"
+                                                    title="Delete Organization"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {expandedOrgId === org.id && (
+                                            <tr className="bg-gray-50">
+                                                <td colSpan={6} className="px-6 py-4">
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <h4 className="text-sm font-semibold text-gray-900 mb-4">Organization Members</h4>
+                                                        {loadingOrgMembers === org.id ? (
+                                                            <div className="flex justify-center py-4">
+                                                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="overflow-x-auto">
+                                                                <table className="w-full text-sm">
+                                                                    <thead>
+                                                                        <tr className="text-gray-500 border-b border-gray-100">
+                                                                            <th className="text-left font-medium py-2">Name</th>
+                                                                            <th className="text-left font-medium py-2">Email</th>
+                                                                            <th className="text-left font-medium py-2">Role</th>
+                                                                            <th className="text-left font-medium py-2">Last Active</th>
+                                                                            <th className="text-right font-medium py-2">Actions</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {orgMembers[org.id]?.map((member) => (
+                                                                            <tr key={member.id} className="border-b border-gray-50 last:border-0">
+                                                                                <td className="py-2">{member.users?.full_name || 'N/A'}</td>
+                                                                                <td className="py-2">{member.users?.email}</td>
+                                                                                <td className="py-2">
+                                                                                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">
+                                                                                        {member.role}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className="py-2 text-gray-500">
+                                                                                    {formatDate(member.users?.last_sign_in_at)}
+                                                                                </td>
+                                                                                <td className="py-2 text-right">
+                                                                                    <button
+                                                                                        onClick={() => handleDeleteOrgMember(member.user_id, org.id)}
+                                                                                        className="text-red-600 hover:text-red-800 text-xs px-2 py-1 hover:bg-red-50 rounded"
+                                                                                    >
+                                                                                        Remove
+                                                                                    </button>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                        {(!orgMembers[org.id] || orgMembers[org.id].length === 0) && (
+                                                                            <tr>
+                                                                                <td colSpan={5} className="text-center py-4 text-gray-500">
+                                                                                    No members found
+                                                                                </td>
+                                                                            </tr>
+                                                                        )}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
             )}
+
+            {/* Delete Org Confirmation Modal */}
+            {deleteOrgConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6 border-b border-gray-200 flex items-center gap-3">
+                            <div className="p-2 bg-red-100 rounded-lg">
+                                <AlertCircle className="w-5 h-5 text-red-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Delete Organization</h3>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-600">
+                                Are you sure you want to delete this organization?
+                                This will remove all data associated with it, including members and reports.
+                            </p>
+                            <p className="text-sm text-red-600 mt-2 font-medium">
+                                This action cannot be undone.
+                            </p>
+                        </div>
+                        <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => setDeleteOrgConfirm(null)}
+                                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleDeleteOrg(deleteOrgConfirm)}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                            >
+                                Delete Organization
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     )
 }
