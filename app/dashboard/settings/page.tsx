@@ -118,6 +118,32 @@ export default function SettingsPage() {
         setLoading(false)
     }
 
+    const loadMembers = async () => {
+        if (!organization?.id) return
+        const { data: membersData } = await supabase
+            .from('users')
+            .select('id, email, full_name, role, job_title, company_join_date, created_at')
+            .eq('organization_id', organization.id)
+
+        setMembers(membersData || [])
+
+        if (membersData && membersData.length > 0) {
+            const counts: Record<string, number> = {}
+            await Promise.all(
+                membersData.map(async (m: any) => {
+                    const { count } = await supabase
+                        .from('disease_reports')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('created_by', m.id)
+                    counts[m.id] = count || 0
+                })
+            )
+            setMemberReportCounts(counts)
+        } else {
+            setMemberReportCounts({})
+        }
+    }
+
     const copyShareCode = () => {
         if (organization?.share_code) {
             navigator.clipboard.writeText(organization.share_code)
@@ -179,7 +205,7 @@ export default function SettingsPage() {
                 return
             }
 
-            await loadSettings()
+            await loadMembers()
         } catch (error) {
             console.error('Role change error:', error)
             alert('Failed to update role')
@@ -213,7 +239,7 @@ export default function SettingsPage() {
             }
 
             // Refresh members list
-            await loadSettings()
+            await loadMembers()
             setDeleteConfirm(null)
         } catch (error) {
             console.error('Delete error:', error)
