@@ -66,19 +66,10 @@ export default function SettingsPage() {
         if (!userData) return
 
         setUser(userData)
-        setIsSuperAdmin(SUPER_ADMIN_EMAILS.has(userData.email.toLowerCase()))
 
-        // Check if user is admin of their organization
-        if (userData.organization_id) {
-            const { data: userOrgData } = await supabase
-                .from('user_organizations')
-                .select('role')
-                .eq('user_id', session.user.id)
-                .eq('organization_id', userData.organization_id)
-                .single()
-
-            setIsAdmin(userOrgData?.role === 'admin' || userOrgData?.role === 'super_admin')
-        }
+        const isSuper = userData.role === 'super_admin'
+        setIsSuperAdmin(isSuper)
+        setIsAdmin(userData.role === 'admin' || isSuper)
 
         // Load organization
         if (userData.organization_id) {
