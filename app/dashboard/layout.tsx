@@ -113,7 +113,7 @@ export default function DashboardLayout({
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
-        router.push('/welcome')
+        router.push('/login')
     }
 
     if (loading) {
