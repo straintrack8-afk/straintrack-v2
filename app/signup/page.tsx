@@ -52,8 +52,8 @@ export default function SignupPage() {
             if (authError) throw authError
 
             if (authData.user) {
-                // Redirect to onboarding
-                router.push('/onboarding')
+                // Redirect to dashboard
+                router.push('/dashboard')
             }
         } catch (err: any) {
             setError(err.message || 'Failed to create account')
