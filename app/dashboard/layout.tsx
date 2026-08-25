@@ -12,11 +12,10 @@ import {
     LogOut,
     Menu,
     X,
-    ChevronDown,
     MapPin
 } from 'lucide-react'
 import Link from 'next/link'
-import { User, Organization, OrganizationWithRole } from '@/lib/types'
+import { User, OrganizationWithRole } from '@/lib/types'
 import { OrganizationProvider } from '@/contexts/OrganizationContext'
 
 const SUPER_ADMIN_EMAILS = new Set(['straintrack8@gmail.com'])
@@ -30,7 +29,6 @@ export default function DashboardLayout({
     const supabase = createClient()
 
     const [user, setUser] = useState<User | null>(null)
-    const [organizations, setOrganizations] = useState<OrganizationWithRole[]>([])
     const [activeOrg, setActiveOrg] = useState<OrganizationWithRole | null>(null)
     const [isSuperAdmin, setIsSuperAdmin] = useState(false)
     const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -60,49 +58,20 @@ export default function DashboardLayout({
             setUser(userData)
             setIsSuperAdmin(SUPER_ADMIN_EMAILS.has(userData.email.toLowerCase()))
 
-            // Load organizations
-            if (userData.role === 'super_admin') {
-                // Super admin: load all organizations
-                const { data: allOrgs } = await supabase
+            // Always load org directly from users.organization_id — no switching, no caching
+            if (userData.organization_id) {
+                const { data: orgData } = await supabase
                     .from('organizations')
                     .select('*')
-                    .order('name')
+                    .eq('id', userData.organization_id)
+                    .single()
 
-                if (allOrgs) {
-                    const orgsWithRole = allOrgs.map(org => ({ ...org, role: 'admin' as const }))
-
-                    // Sort: Super Admin Organization first, then alphabetically
-                    orgsWithRole.sort((a, b) => {
-                        if (a.name === 'Super Admin Organization') return -1
-                        if (b.name === 'Super Admin Organization') return 1
-                        return a.name.localeCompare(b.name)
-                    })
-
-                    setOrganizations(orgsWithRole)
-                    if (orgsWithRole.length > 0) {
-                        setActiveOrg(orgsWithRole[0])
+                if (orgData) {
+                    const orgWithRole: OrganizationWithRole = {
+                        ...orgData,
+                        role: userData.role as 'admin' | 'member' | 'super_admin'
                     }
-                }
-            } else {
-                // Regular user: load only their organizations
-                const { data: userOrgs } = await supabase
-                    .from('user_organizations')
-                    .select('organization_id, role, organizations(*)')
-                    .eq('user_id', userData.id)
-
-                if (userOrgs) {
-                    const orgsWithRole = userOrgs.map(uo => {
-                        const org = Array.isArray(uo.organizations) ? uo.organizations[0] : uo.organizations
-                        return {
-                            ...org,
-                            role: uo.role
-                        }
-                    }) as OrganizationWithRole[]
-
-                    setOrganizations(orgsWithRole)
-                    if (orgsWithRole.length > 0) {
-                        setActiveOrg(orgsWithRole[0])
-                    }
+                    setActiveOrg(orgWithRole)
                 }
             }
 
@@ -114,7 +83,7 @@ export default function DashboardLayout({
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
-        router.push('/welcome')
+        router.push('/login')
     }
 
     if (loading) {
@@ -144,7 +113,7 @@ export default function DashboardLayout({
             )}
 
             {/* Sidebar */}
-            <aside className={`
+            <aside className={`dashboard-sidebar
         fixed top-0 left-0 z-50 h-full w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
@@ -170,27 +139,14 @@ export default function DashboardLayout({
                         </button>
                     </div>
 
-                    {/* Organization Info - Super Admin Only */}
-                    {isSuperAdmin && (
+                    {/* Organization Info */}
+                    {activeOrg && (
                         <div className="p-4 border-b border-gray-200">
-                            <div className="relative">
-                                <select
-                                    value={activeOrg?.id || ''}
-                                    onChange={(e) => {
-                                        const org = organizations.find(o => o.id === e.target.value)
-                                        setActiveOrg(org || null)
-                                    }}
-                                    className="w-full px-3 py-2 pr-8 bg-gray-50 border border-gray-300 rounded-lg text-sm font-medium appearance-none cursor-pointer hover:bg-gray-100 transition"
-                                >
-                                    {organizations.map(org => (
-                                        <option key={org.id} value={org.id}>
-                                            {org.name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-                                <p className="text-xs text-primary-600 mt-2 font-medium">Super Admin View</p>
-                            </div>
+                            <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-1">Organization</p>
+                            <p className="text-sm font-semibold text-gray-900 truncate">{activeOrg.name}</p>
+                            {isSuperAdmin && (
+                                <p className="text-xs text-primary-600 mt-1 font-medium">Super Admin</p>
+                            )}
                         </div>
                     )}
 
@@ -232,7 +188,7 @@ export default function DashboardLayout({
             {/* Main Content */}
             <div className="lg:pl-64">
                 {/* Top Header */}
-                <header className="sticky top-0 z-30 h-20 bg-white border-b border-gray-200 flex items-center px-4 lg:px-8">
+                <header className="dashboard-header sticky top-0 z-30 h-20 bg-white border-b border-gray-200 flex items-center px-4 lg:px-8">
                     <button
                         onClick={() => setSidebarOpen(true)}
                         className="lg:hidden p-2 rounded-lg hover:bg-gray-100 mr-4"
@@ -250,7 +206,6 @@ export default function DashboardLayout({
                 <main className="p-2 lg:p-4">
                     <OrganizationProvider
                         activeOrg={activeOrg}
-                        organizations={organizations}
                         isSuperAdmin={isSuperAdmin}
                     >
                         {children}

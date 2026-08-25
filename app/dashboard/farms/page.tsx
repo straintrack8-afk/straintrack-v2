@@ -60,7 +60,7 @@ export default function FarmsPage() {
     const [submitting, setSubmitting] = useState(false)
     const [gettingLocation, setGettingLocation] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
-    const [animalFilter, setAnimalFilter] = useState<string>('all')
+    const [animalFilter, setAnimalFilter] = useState<string>('All')
     const [sortBy, setSortBy] = useState<'name' | 'location' | 'animal_type'>('name')
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 

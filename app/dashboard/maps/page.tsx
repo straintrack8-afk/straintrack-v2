@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
-import { MapPin, Filter } from 'lucide-react'
+import { MapPin, Filter, Maximize2, Minimize2 } from 'lucide-react'
 import { useOrganization } from '@/contexts/OrganizationContext'
 
 // Dynamically import FarmMap to avoid SSR issues with Leaflet
@@ -27,10 +27,24 @@ export default function MapsPage() {
     const [loading, setLoading] = useState(true)
 
     // Filter states
+    const [periodFilter, setPeriodFilter] = useState<string>('all')
     const [animalFilter, setAnimalFilter] = useState<string>('all')
     const [farmTypeFilter, setFarmTypeFilter] = useState<string>('all')
     const [diseaseFilter, setDiseaseFilter] = useState<string>('all')
     const [strainFilter, setStrainFilter] = useState<string>('all')
+    const [isFullscreen, setIsFullscreen] = useState(false)
+
+    const getPeriodCutoff = (period: string): Date => {
+        const now = new Date()
+        switch (period) {
+            case '7d':  { const d = new Date(now); d.setDate(d.getDate() - 7); return d }
+            case '30d': { const d = new Date(now); d.setDate(d.getDate() - 30); return d }
+            case '3m':  { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d }
+            case '6m':  { const d = new Date(now); d.setMonth(d.getMonth() - 6); return d }
+            case 'year':{ return new Date(now.getFullYear(), 0, 1) }
+            default:    return new Date(0)
+        }
+    }
 
     useEffect(() => {
         loadData()
@@ -94,6 +108,12 @@ export default function MapsPage() {
     const diseases = useMemo(() => {
         let filteredReports = reports
 
+        // Filter reports by period
+        if (periodFilter !== 'all') {
+            const cutoff = getPeriodCutoff(periodFilter)
+            filteredReports = filteredReports.filter(r => new Date(r.created_at) >= cutoff)
+        }
+
         // Filter reports by animal type
         if (animalFilter !== 'all') {
             const farmIds = new Set(farms.filter(f => f.animal_type === animalFilter).map(f => f.id))
@@ -108,10 +128,16 @@ export default function MapsPage() {
 
         const diseaseSet = new Set(filteredReports.map(r => r.disease_name).filter(Boolean))
         return Array.from(diseaseSet).sort()
-    }, [reports, farms, animalFilter, farmTypeFilter])
+    }, [reports, farms, periodFilter, animalFilter, farmTypeFilter])
 
     const strains = useMemo(() => {
         let filteredReports = reports
+
+        // Filter reports by period
+        if (periodFilter !== 'all') {
+            const cutoff = getPeriodCutoff(periodFilter)
+            filteredReports = filteredReports.filter(r => new Date(r.created_at) >= cutoff)
+        }
 
         // Filter reports by animal type
         if (animalFilter !== 'all') {
@@ -132,7 +158,15 @@ export default function MapsPage() {
 
         const strainSet = new Set(filteredReports.map(r => r.strain_subtype).filter(Boolean))
         return Array.from(strainSet).sort()
-    }, [reports, farms, animalFilter, farmTypeFilter, diseaseFilter])
+    }, [reports, farms, periodFilter, animalFilter, farmTypeFilter, diseaseFilter])
+
+    // Reset all other filters when period changes
+    useEffect(() => {
+        setAnimalFilter('all')
+        setFarmTypeFilter('all')
+        setDiseaseFilter('all')
+        setStrainFilter('all')
+    }, [periodFilter])
 
     // Reset dependent filters when parent filter changes
     useEffect(() => {
@@ -156,6 +190,17 @@ export default function MapsPage() {
     // Filtered farm markers
     const filteredFarmMarkers = useMemo(() => {
         let filteredFarms = farms
+
+        // Filter by period — farm must have at least one report within the period
+        if (periodFilter !== 'all') {
+            const cutoff = getPeriodCutoff(periodFilter)
+            const farmIdsInPeriod = new Set(
+                reports
+                    .filter(r => new Date(r.created_at) >= cutoff)
+                    .map(r => r.farm_id)
+            )
+            filteredFarms = filteredFarms.filter(f => farmIdsInPeriod.has(f.id))
+        }
 
         // Filter by animal type
         if (animalFilter !== 'all') {
@@ -185,6 +230,7 @@ export default function MapsPage() {
         return filteredFarms.map((farm: any) => {
             const farmReports = reports.filter((r: any) => r.farm_id === farm.id)
 
+
             // Get highest severity report
             let highestSeverityReport = farmReports[0]
             farmReports.forEach((report: any) => {
@@ -210,7 +256,17 @@ export default function MapsPage() {
                 farmType: farm.farm_type
             }
         })
-    }, [farms, reports, animalFilter, farmTypeFilter, diseaseFilter, strainFilter])
+    }, [farms, reports, periodFilter, animalFilter, farmTypeFilter, diseaseFilter, strainFilter])
+
+    // Fullscreen mode — hide dashboard sidebar & header via body class
+    useEffect(() => {
+        if (isFullscreen) {
+            document.body.classList.add('hide-dashboard-chrome')
+        } else {
+            document.body.classList.remove('hide-dashboard-chrome')
+        }
+        return () => { document.body.classList.remove('hide-dashboard-chrome') }
+    }, [isFullscreen])
 
     if (loading) {
         return (
@@ -222,7 +278,8 @@ export default function MapsPage() {
 
     return (
         <div className="flex gap-4 h-[calc(100vh-140px)]">
-            {/* Left Sidebar - Filters */}
+            {/* Left Sidebar - Filters (hidden in fullscreen) */}
+            {!isFullscreen && (
             <div className="w-80 bg-white rounded-xl shadow-sm border border-gray-200 p-4 overflow-y-auto flex-shrink-0">
                 <div className="flex items-center gap-2 mb-4">
                     <Filter className="w-4 h-4 text-gray-600" />
@@ -233,6 +290,23 @@ export default function MapsPage() {
                 </div>
 
                 <div className="space-y-4">
+                    {/* Period Filter */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Period</label>
+                        <select
+                            value={periodFilter}
+                            onChange={(e) => setPeriodFilter(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
+                        >
+                            <option value="all">All Time</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                            <option value="3m">Last 3 Months</option>
+                            <option value="6m">Last 6 Months</option>
+                            <option value="year">This Year</option>
+                        </select>
+                    </div>
+
                     {/* Animal Type Filter */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Animal Type</label>
@@ -294,9 +368,32 @@ export default function MapsPage() {
                     </div>
                 </div>
             </div>
+            )}
 
-            {/* Right Side - Map (Full Width) */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Right Side - Map */}
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative ${isFullscreen ? 'fixed top-0 left-0 w-screen h-screen z-[9999] rounded-none border-0' : 'flex-1'}`}>
+                {/* Enter Fullscreen Button (top-right of map card) */}
+                {!isFullscreen && (
+                    <button
+                        onClick={() => setIsFullscreen(true)}
+                        className="absolute top-3 right-3 z-[1000] p-2 bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition"
+                        title="Enter Fullscreen"
+                    >
+                        <Maximize2 className="w-4 h-4 text-gray-600" />
+                    </button>
+                )}
+
+                {/* Exit Fullscreen Button (floating, top-right) */}
+                {isFullscreen && (
+                    <button
+                        onClick={() => setIsFullscreen(false)}
+                        className="fixed top-4 right-4 z-[10000] flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-lg border border-gray-200 hover:bg-gray-50 transition"
+                    >
+                        <Minimize2 className="w-4 h-4 text-gray-600" />
+                        <span className="text-sm font-medium text-gray-700">Exit Fullscreen</span>
+                    </button>
+                )}
+
                 {filteredFarmMarkers.length > 0 ? (
                     <FarmMap farms={filteredFarmMarkers} />
                 ) : (

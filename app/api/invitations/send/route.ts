@@ -8,212 +8,189 @@ export async function POST(request: NextRequest) {
     try {
         const supabase = await createClient(request)
 
-        // Check authentication
+        // Auth check
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Get request body
-        const { email, organizationId } = await request.json()
-
-        if (!email || !organizationId) {
-            return NextResponse.json({ error: 'Email and organization ID required' }, { status: 400 })
-        }
-
-        // Verify user is admin of the organization
-        const { data: userOrg } = await supabase
-            .from('user_organizations')
-            .select('role')
-            .eq('user_id', session.user.id)
-            .eq('organization_id', organizationId)
-            .single()
-
-        if (!userOrg || !['admin', 'super_admin'].includes(userOrg.role)) {
-            return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
-        }
-
-        // Check if user already exists
-        const { data: existingUser } = await supabase
+        // Verify caller is admin or super_admin
+        const { data: caller } = await supabase
             .from('users')
-            .select('id')
-            .eq('email', email.toLowerCase())
-            .single()
-
-        if (existingUser) {
-            return NextResponse.json({ error: 'User with this email already exists' }, { status: 400 })
-        }
-
-        // Check for existing pending invitation
-        const { data: existingInvitation } = await supabase
-            .from('organization_invitations')
-            .select('id')
-            .eq('organization_id', organizationId)
-            .eq('email', email.toLowerCase())
-            .eq('status', 'pending')
-            .single()
-
-        if (existingInvitation) {
-            return NextResponse.json({ error: 'Invitation already sent to this email' }, { status: 400 })
-        }
-
-        // Get organization details
-        const { data: organization } = await supabase
-            .from('organizations')
-            .select('name')
-            .eq('id', organizationId)
-            .single()
-
-        if (!organization) {
-            return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
-        }
-
-        // Get inviter details
-        const { data: inviter } = await supabase
-            .from('users')
-            .select('full_name, email')
+            .select('id, role, organization_id')
             .eq('id', session.user.id)
             .single()
 
-        // Create invitation record (expires in 7 days)
+        if (!caller || !['admin', 'super_admin'].includes(caller.role)) {
+            return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
+        }
+
+        if (!caller.organization_id) {
+            return NextResponse.json({ error: 'No organization associated with your account' }, { status: 400 })
+        }
+
+        const { email, job_title } = await request.json()
+
+        if (!email) {
+            return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+        }
+
+        // Check if user already exists in public.users
+        const { data: existingUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', email.toLowerCase().trim())
+            .maybeSingle()
+
+        if (existingUser) {
+            return NextResponse.json({ error: 'User already exists' }, { status: 400 })
+        }
+
+        // Check for existing pending invitation for this org + email
+        const { data: existingInvite } = await supabase
+            .from('organization_invitations')
+            .select('id')
+            .eq('organization_id', caller.organization_id)
+            .eq('email', email.toLowerCase().trim())
+            .eq('status', 'pending')
+            .maybeSingle()
+
+        if (existingInvite) {
+            return NextResponse.json({ error: 'Invitation already sent' }, { status: 400 })
+        }
+
+        // Create invitation — expires in 7 days
         const expiresAt = new Date()
         expiresAt.setDate(expiresAt.getDate() + 7)
 
-        const { data: invitation, error: inviteError } = await supabase
+        const { data: invitation, error: insertError } = await supabase
             .from('organization_invitations')
             .insert({
-                organization_id: organizationId,
-                email: email.toLowerCase(),
-                invited_by: session.user.id,
+                organization_id: caller.organization_id,
+                email: email.toLowerCase().trim(),
+                invited_by: caller.id,
+                status: 'pending',
                 expires_at: expiresAt.toISOString(),
-                status: 'pending'
+                job_title: job_title || null,
             })
-            .select()
+            .select('id')
             .single()
 
-        if (inviteError) {
-            console.error('Invitation creation error:', inviteError)
+        if (insertError || !invitation) {
+            console.error('Invitation insert error:', insertError)
             return NextResponse.json({ error: 'Failed to create invitation' }, { status: 500 })
         }
 
-        // Create signup link with invitation token
-        const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL}/signup?invitation=${invitation.id}`
+        // Send invitation email via Resend
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002'
+        const signupUrl = `${appUrl}/signup?invitation=${invitation.id}`
+        const year = new Date().getFullYear()
 
-        // Send email via Resend
-        // NOTE: onboarding@resend.dev can only send to verified email (owner's email)
-        // For testing with other emails, we'll skip email sending but create invitation
-        const TESTING_MODE = process.env.NODE_ENV === 'development'
-        const OWNER_EMAIL = 'straintrack8@gmail.com' // Email used to register Resend
+        const { error: emailError } = await resend.emails.send({
+            from: 'StrainTrack <onboarding@resend.dev>', // Replace with your verified domain
+            to: email.toLowerCase().trim(),
+            subject: "You've been invited to StrainTrack - Vaksindo Vietnam Animal Health",
+            html: `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're Invited to StrainTrack</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;padding:48px 20px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
 
-        try {
-            // Only send email if recipient is owner email (Resend restriction)
-            if (!TESTING_MODE || email.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
-                const emailResult = await resend.emails.send({
-                    from: 'StrainTrack <onboarding@resend.dev>',
-                    to: email,
-                    subject: `You've been invited to join ${organization.name} on StrainTrack`,
-                    html: `
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <meta charset="utf-8">
-                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        </head>
-                        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; border-radius: 10px 10px 0 0;">
-                                <h1 style="color: white; margin: 0; font-size: 28px;">StrainTrack</h1>
-                            </div>
-                            
-                            <div style="background: #ffffff; padding: 40px 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
-                                <h2 style="color: #111827; margin-top: 0;">You're Invited!</h2>
-                                
-                                <p style="font-size: 16px; color: #4b5563;">
-                                    <strong>${inviter?.full_name || inviter?.email}</strong> has invited you to join 
-                                    <strong>${organization.name}</strong> on StrainTrack.
-                                </p>
-                                
-                                <p style="font-size: 16px; color: #4b5563;">
-                                    StrainTrack is a comprehensive disease tracking and management system for livestock farms.
-                                </p>
-                                
-                                <div style="text-align: center; margin: 35px 0;">
-                                    <a href="${signupUrl}" 
-                                       style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                                              color: white; 
-                                              padding: 14px 32px; 
-                                              text-decoration: none; 
-                                              border-radius: 8px; 
-                                              font-weight: 600; 
-                                              font-size: 16px;
-                                              display: inline-block;">
-                                        Accept Invitation & Create Account
-                                    </a>
-                                </div>
-                                
-                                <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
-                                    This invitation will expire in <strong>7 days</strong> on 
-                                    ${expiresAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
-                                </p>
-                                
-                                <p style="font-size: 14px; color: #6b7280; margin-top: 20px;">
-                                    If you didn't expect this invitation, you can safely ignore this email.
-                                </p>
-                            </div>
-                            
-                            <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-                                <p>© ${new Date().getFullYear()} StrainTrack. All rights reserved.</p>
-                            </div>
-                        </body>
-                        </html>
-                    `
-                })
+          <!-- Header -->
+          <tr>
+            <td style="background-color:#0d9488;padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">StrainTrack</h1>
+              <p style="margin:6px 0 0;color:#99f6e4;font-size:13px;letter-spacing:0.3px;">Vaksindo Vietnam Animal Health</p>
+            </td>
+          </tr>
 
-                console.log('✅ Email sent successfully:', {
-                    emailId: emailResult.data?.id,
-                    to: email,
-                    from: 'onboarding@resend.dev'
-                })
-            } else {
-                // Testing mode: Skip email, just create invitation
-                console.log('⚠️ TESTING MODE: Email skipped (Resend restriction)')
-                console.log('📋 Invitation created but email not sent to:', email)
-                console.log('🔗 Signup URL:', signupUrl)
-                console.log('💡 To receive emails, use owner email:', OWNER_EMAIL)
-            }
-        } catch (emailError: any) {
-            console.error('❌ Email sending error:', {
-                error: emailError.message,
-                statusCode: emailError.statusCode,
-                name: emailError.name
-            })
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <h2 style="margin:0 0 16px;color:#111827;font-size:22px;font-weight:600;">You've been invited!</h2>
+              <p style="margin:0 0 14px;color:#4b5563;font-size:15px;line-height:1.65;">
+                You have been invited to join <strong style="color:#111827;">StrainTrack</strong> —
+                the disease surveillance and reporting platform for Vaksindo Vietnam Animal Health.
+              </p>
+              <p style="margin:0 0 32px;color:#4b5563;font-size:15px;line-height:1.65;">
+                Click the button below to create your account and access the platform.
+              </p>
 
-            // In testing mode, don't fail if email doesn't send
-            if (TESTING_MODE) {
-                console.log('⚠️ Email failed but continuing in testing mode')
-            } else {
-                // Delete invitation if email fails in production
-                await supabase
-                    .from('organization_invitations')
-                    .delete()
-                    .eq('id', invitation.id)
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="padding-bottom:32px;">
+                    <a href="${signupUrl}"
+                       style="display:inline-block;background-color:#0d9488;color:#ffffff;text-decoration:none;padding:14px 44px;border-radius:8px;font-size:15px;font-weight:600;letter-spacing:0.2px;">
+                      Create Your Account →
+                    </a>
+                  </td>
+                </tr>
+              </table>
 
-                return NextResponse.json({
-                    error: `Failed to send invitation email: ${emailError.message || 'Unknown error'}`
-                }, { status: 500 })
-            }
-        }
+              <!-- Expiry & Disclaimer -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border-radius:8px;">
+                <tr>
+                  <td style="padding:16px 20px;">
+                    <p style="margin:0 0 6px;color:#6b7280;font-size:13px;text-align:center;">
+                      ⏱ This invitation link expires in <strong>7 days</strong>.
+                    </p>
+                    <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">
+                      If you did not expect this invitation, you can safely ignore this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
 
-        return NextResponse.json({
-            success: true,
-            invitation: {
-                id: invitation.id,
-                email: invitation.email,
-                expires_at: invitation.expires_at
-            }
+              <!-- Divider -->
+              <hr style="margin:28px 0;border:none;border-top:1px solid #e5e7eb;">
+
+              <!-- URL Fallback -->
+              <p style="margin:0;color:#9ca3af;font-size:11px;line-height:1.6;">
+                If the button doesn't work, copy and paste this link into your browser:<br>
+                <a href="${signupUrl}" style="color:#0d9488;word-break:break-all;">${signupUrl}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb;">
+              <p style="margin:0;color:#9ca3af;font-size:12px;">
+                © ${year} StrainTrack · Vaksindo Vietnam Animal Health
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
         })
 
+        if (emailError) {
+            console.error('Resend email error:', emailError)
+            return NextResponse.json({
+                success: true,
+                invitation_id: invitation.id,
+                warning: 'Invitation created but email delivery failed. Check RESEND_API_KEY and from address.',
+            })
+        }
+
+        return NextResponse.json({ success: true, invitation_id: invitation.id })
+
     } catch (error) {
-        console.error('Invitation error:', error)
+        console.error('Invitation send error:', error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

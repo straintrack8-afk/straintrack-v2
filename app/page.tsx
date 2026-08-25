@@ -17,7 +17,7 @@ export default function HomePage() {
                 router.push('/dashboard')
             } else {
                 // User is not logged in, redirect to welcome page
-                router.push('/welcome')
+                router.push('/login')
             }
         }
 

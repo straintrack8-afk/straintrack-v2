@@ -11,11 +11,13 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Get request body
         const { userId, organizationId } = await request.json()
 
         if (!userId || !organizationId) {
-            return NextResponse.json({ error: 'User ID and organization ID required' }, { status: 400 })
+            return NextResponse.json(
+                { error: 'User ID and organization ID required' },
+                { status: 400 }
+            )
         }
 
         // Prevent self-deletion
@@ -23,61 +25,66 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Cannot delete yourself' }, { status: 400 })
         }
 
-        // Verify requester is admin of the organization
-        const { data: requesterOrg } = await supabase
-            .from('user_organizations')
-            .select('role')
-            .eq('user_id', session.user.id)
-            .eq('organization_id', organizationId)
+        // Verify caller is admin of the organization (via users table)
+        const { data: requester } = await supabase
+            .from('users')
+            .select('role, organization_id')
+            .eq('id', session.user.id)
             .single()
 
-        if (!requesterOrg || !['admin', 'super_admin'].includes(requesterOrg.role)) {
-            return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
+        const callerIsAdmin =
+            requester?.organization_id === organizationId &&
+            ['admin', 'super_admin'].includes(requester?.role ?? '')
+
+        if (!callerIsAdmin) {
+            return NextResponse.json(
+                { error: 'Forbidden: Admin access required' },
+                { status: 403 }
+            )
         }
 
-        // Verify target user is a member of the organization
-        const { data: targetUserOrg } = await supabase
-            .from('user_organizations')
-            .select('role')
-            .eq('user_id', userId)
-            .eq('organization_id', organizationId)
+        // Verify target user is in this organization
+        const { data: targetUser } = await supabase
+            .from('users')
+            .select('role, organization_id')
+            .eq('id', userId)
             .single()
 
-        if (!targetUserOrg) {
-            return NextResponse.json({ error: 'User is not a member of this organization' }, { status: 404 })
+        if (!targetUser || targetUser.organization_id !== organizationId) {
+            return NextResponse.json(
+                { error: 'User is not a member of this organization' },
+                { status: 404 }
+            )
         }
 
-        // Check if this is the last admin
-        if (targetUserOrg.role === 'admin') {
-            const { data: adminCount } = await supabase
-                .from('user_organizations')
-                .select('id', { count: 'exact' })
+        // Guard: cannot remove last admin
+        if (targetUser.role === 'admin') {
+            const { count: adminCount } = await supabase
+                .from('users')
+                .select('id', { count: 'exact', head: true })
                 .eq('organization_id', organizationId)
                 .eq('role', 'admin')
 
-            if (adminCount && adminCount.length <= 1) {
-                return NextResponse.json({
-                    error: 'Cannot delete the last admin. Promote another member to admin first.'
-                }, { status: 400 })
+            if ((adminCount ?? 0) <= 1) {
+                return NextResponse.json(
+                    { error: 'Cannot remove the last admin. Promote another member first.' },
+                    { status: 400 }
+                )
             }
         }
 
-        // Delete user from organization
-        const { error: deleteError } = await supabase
-            .from('user_organizations')
-            .delete()
-            .eq('user_id', userId)
-            .eq('organization_id', organizationId)
+        // Remove member: clear organization_id and reset role to 'admin' (default for new users)
+        const { error: removeError } = await supabase
+            .from('users')
+            .update({ organization_id: null, role: 'admin' })
+            .eq('id', userId)
 
-        if (deleteError) {
-            console.error('Delete error:', deleteError)
-            return NextResponse.json({ error: 'Failed to delete member' }, { status: 500 })
+        if (removeError) {
+            console.error('Delete member error:', removeError)
+            return NextResponse.json({ error: 'Failed to remove member' }, { status: 500 })
         }
 
-        return NextResponse.json({
-            success: true,
-            message: 'Member deleted successfully'
-        })
+        return NextResponse.json({ success: true, message: 'Member removed successfully' })
 
     } catch (error) {
         console.error('Delete member error:', error)

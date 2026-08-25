@@ -22,13 +22,8 @@ export interface Organization {
     updated_at: string
 }
 
-export interface UserOrganization {
-    id: string
-    user_id: string
-    organization_id: string
-    role: 'admin' | 'member'
-    joined_at: string
-}
+// NOTE: user_organizations table removed. A user's organization membership
+// is determined solely by users.organization_id and users.role.
 
 export interface Farm {
     id: string

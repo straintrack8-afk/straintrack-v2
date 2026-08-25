@@ -32,7 +32,7 @@ export default function LoginPage() {
             // Check if user exists in public.users
             const { data: userData, error: userError } = await supabase
                 .from('users')
-                .select('id, email, organization_id')
+                .select('id, email')
                 .eq('id', authData.user.id)
                 .single()
 
@@ -40,14 +40,14 @@ export default function LoginPage() {
                 throw new Error('User account not properly configured')
             }
 
-            // Redirect based on organization status
-            if (userData.organization_id) {
-                router.push('/dashboard')
-            } else {
-                router.push('/onboarding')
-            }
+            router.push('/dashboard')
         } catch (err: any) {
-            setError(err.message || 'Failed to login')
+            // Check for network connectivity issues specifically
+            if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+                setError('Network Error: Cannot connect to server. Please check if the database is active.')
+            } else {
+                setError(err.message || 'Failed to login')
+            }
         } finally {
             setLoading(false)
         }
@@ -63,6 +63,7 @@ export default function LoginPage() {
                         </div>
                         <h1 className="text-3xl font-bold text-gray-900">Welcome Back</h1>
                         <p className="text-gray-600 mt-2">Sign in to your StrainTrack account</p>
+                        <p className="text-sm text-gray-500 mt-1">Internal access only. Contact your administrator for access.</p>
                     </div>
 
                     <form onSubmit={handleLogin} className="space-y-6">
@@ -97,6 +98,7 @@ export default function LoginPage() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
+                                autoComplete="current-password"
                                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
                                 placeholder="••••••••"
                             />
@@ -117,14 +119,6 @@ export default function LoginPage() {
                         </Link>
                     </div>
 
-                    <div className="mt-6 text-center">
-                        <p className="text-gray-600">
-                            Don't have an account?{' '}
-                            <Link href="/signup" className="text-primary-600 font-semibold hover:text-primary-700">
-                                Sign up
-                            </Link>
-                        </p>
-                    </div>
                 </div>
             </div>
         </div>
