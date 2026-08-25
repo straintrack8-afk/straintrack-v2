@@ -47,14 +47,13 @@ export async function POST(request: NextRequest) {
             .single()
 
         if (existingUser) {
-            return NextResponse.json({ error: 'User with this email already exists' }, { status: 400 })
+            return NextResponse.json({ error: 'User with this email already has an account' }, { status: 400 })
         }
 
-        // Delete any existing pending invitation for this email (replace, don't block)
+        // Delete any existing pending invitation for this email (allow regenerate)
         await supabase
             .from('organization_invitations')
             .delete()
-            .eq('organization_id', caller.organization_id)
             .eq('email', email.toLowerCase())
             .eq('status', 'pending')
 
