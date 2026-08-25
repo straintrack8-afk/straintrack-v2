@@ -83,24 +83,21 @@ export default function DashboardLayout({
                     }
                 }
             } else {
-                // Regular user: load only their organizations
-                const { data: userOrgs } = await supabase
-                    .from('user_organizations')
-                    .select('organization_id, role, organizations(*)')
-                    .eq('user_id', userData.id)
+                // Regular user: load org directly from users.organization_id
+                if (userData.organization_id) {
+                    const { data: orgData } = await supabase
+                        .from('organizations')
+                        .select('*')
+                        .eq('id', userData.organization_id)
+                        .single()
 
-                if (userOrgs) {
-                    const orgsWithRole = userOrgs.map(uo => {
-                        const org = Array.isArray(uo.organizations) ? uo.organizations[0] : uo.organizations
-                        return {
-                            ...org,
-                            role: uo.role
+                    if (orgData) {
+                        const orgWithRole: OrganizationWithRole = {
+                            ...orgData,
+                            role: userData.role as 'admin' | 'member'
                         }
-                    }) as OrganizationWithRole[]
-
-                    setOrganizations(orgsWithRole)
-                    if (orgsWithRole.length > 0) {
-                        setActiveOrg(orgsWithRole[0])
+                        setOrganizations([orgWithRole])
+                        setActiveOrg(orgWithRole)
                     }
                 }
             }
