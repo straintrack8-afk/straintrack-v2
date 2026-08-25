@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
-import { MapPin, Filter } from 'lucide-react'
+import { MapPin, Filter, Maximize2, Minimize2 } from 'lucide-react'
 import { useOrganization } from '@/contexts/OrganizationContext'
 
 // Dynamically import FarmMap to avoid SSR issues with Leaflet
@@ -31,6 +31,7 @@ export default function MapsPage() {
     const [farmTypeFilter, setFarmTypeFilter] = useState<string>('all')
     const [diseaseFilter, setDiseaseFilter] = useState<string>('all')
     const [strainFilter, setStrainFilter] = useState<string>('all')
+    const [isFullscreen, setIsFullscreen] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -212,6 +213,16 @@ export default function MapsPage() {
         })
     }, [farms, reports, animalFilter, farmTypeFilter, diseaseFilter, strainFilter])
 
+    // Fullscreen mode — hide dashboard sidebar & header via body class
+    useEffect(() => {
+        if (isFullscreen) {
+            document.body.classList.add('hide-dashboard-chrome')
+        } else {
+            document.body.classList.remove('hide-dashboard-chrome')
+        }
+        return () => { document.body.classList.remove('hide-dashboard-chrome') }
+    }, [isFullscreen])
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -222,7 +233,8 @@ export default function MapsPage() {
 
     return (
         <div className="flex gap-4 h-[calc(100vh-140px)]">
-            {/* Left Sidebar - Filters */}
+            {/* Left Sidebar - Filters (hidden in fullscreen) */}
+            {!isFullscreen && (
             <div className="w-80 bg-white rounded-xl shadow-sm border border-gray-200 p-4 overflow-y-auto flex-shrink-0">
                 <div className="flex items-center gap-2 mb-4">
                     <Filter className="w-4 h-4 text-gray-600" />
@@ -294,9 +306,32 @@ export default function MapsPage() {
                     </div>
                 </div>
             </div>
+            )}
 
-            {/* Right Side - Map (Full Width) */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Right Side - Map */}
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative ${isFullscreen ? 'fixed top-0 left-0 w-screen h-screen z-[9999] rounded-none border-0' : 'flex-1'}`}>
+                {/* Enter Fullscreen Button */}
+                {!isFullscreen && (
+                    <button
+                        onClick={() => setIsFullscreen(true)}
+                        className="absolute top-2 right-2 z-[1000] p-2 bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition"
+                        title="Enter Fullscreen"
+                    >
+                        <Maximize2 className="w-4 h-4 text-gray-600" />
+                    </button>
+                )}
+
+                {/* Exit Fullscreen Button */}
+                {isFullscreen && (
+                    <button
+                        onClick={() => setIsFullscreen(false)}
+                        className="fixed top-4 right-4 z-[10000] flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-lg border border-gray-200 hover:bg-gray-50 transition"
+                    >
+                        <Minimize2 className="w-4 h-4 text-gray-600" />
+                        <span className="text-sm font-medium text-gray-700">Exit Fullscreen</span>
+                    </button>
+                )}
+
                 {filteredFarmMarkers.length > 0 ? (
                     <FarmMap farms={filteredFarmMarkers} />
                 ) : (

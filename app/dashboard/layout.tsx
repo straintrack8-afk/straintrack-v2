@@ -232,7 +232,7 @@ export default function DashboardLayout({
             {/* Main Content */}
             <div className="lg:pl-64">
                 {/* Top Header */}
-                <header className="sticky top-0 z-30 h-20 bg-white border-b border-gray-200 flex items-center px-4 lg:px-8">
+                <header className="dashboard-header sticky top-0 z-30 h-20 bg-white border-b border-gray-200 flex items-center px-4 lg:px-8">
                     <button
                         onClick={() => setSidebarOpen(true)}
                         className="lg:hidden p-2 rounded-lg hover:bg-gray-100 mr-4"
