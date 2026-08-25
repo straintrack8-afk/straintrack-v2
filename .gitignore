@@ -2,8 +2,6 @@
 .idea/
 android/
 ios/
-lib/
-web/
 pubspec.yaml
 pubspec.lock
 *.iml
