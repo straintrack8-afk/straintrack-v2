@@ -282,23 +282,21 @@ export default function SettingsPage() {
         if (!confirm('Are you sure you want to remove this member?')) return
 
         try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
             const response = await fetch('/api/admin/members/delete', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ userId, organizationId: orgId })
             })
 
             if (!response.ok) throw new Error('Failed to delete member')
 
-            // Refresh local state for this org
-            const { data } = await supabase
-                .from('user_organizations')
-                .select('*, users(id, email, full_name, last_sign_in_at)')
-                .eq('organization_id', orgId)
-
+            // Remove deleted user from local state
             setOrgMembers(prev => ({
                 ...prev,
-                [orgId]: data || []
+                [orgId]: (prev[orgId] || []).filter((m: any) => m.user_id !== userId)
             }))
 
             alert('Member removed successfully')
