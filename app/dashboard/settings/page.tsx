@@ -1,12 +1,11 @@
 'use client'
 
-import { useEffect, useState, Fragment } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User, Building2, Users, Settings as SettingsIcon, Copy, Check, Shield, Trash2, AlertCircle, ChevronDown, ChevronUp, Mail, X } from 'lucide-react'
+import { User, Building2, Users, Settings as SettingsIcon, Copy, Check, Mail, UserPlus, Shield, Trash2, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SUPER_ADMIN_EMAILS = new Set(['straintrack8@gmail.com'])
-const JOB_TITLES = ['Technical', 'Sales', 'Manager', 'Veterinarian', 'Veterinary Technician', 'Other']
 
 export default function SettingsPage() {
     const router = useRouter()
@@ -16,7 +15,6 @@ export default function SettingsPage() {
     const [user, setUser] = useState<any>(null)
     const [organization, setOrganization] = useState<any>(null)
     const [members, setMembers] = useState<any[]>([])
-    const [memberReportCounts, setMemberReportCounts] = useState<Record<string, number>>({})
     const [isSuperAdmin, setIsSuperAdmin] = useState(false)
     const [isAdmin, setIsAdmin] = useState(false)
     const [allOrgs, setAllOrgs] = useState<any[]>([])
@@ -28,25 +26,14 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true)
 
     // Member management states
-    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-    const [deleting, setDeleting] = useState(false)
-    const [changingRole, setChangingRole] = useState<string | null>(null)
-
-    // Invite modal states
     const [showInviteModal, setShowInviteModal] = useState(false)
     const [inviteEmail, setInviteEmail] = useState('')
-    const [inviteJobTitle, setInviteJobTitle] = useState('')
     const [inviting, setInviting] = useState(false)
-    const [inviteError, setInviteError] = useState('')
-    const [inviteSuccess, setInviteSuccess] = useState(false)
-
-    // Profile editing states
-    const [profileName, setProfileName] = useState('')
-    const [profileJobTitle, setProfileJobTitle] = useState('')
-    const [profileJoinDate, setProfileJoinDate] = useState('')
-    const [savingProfile, setSavingProfile] = useState(false)
-    const [profileSaved, setProfileSaved] = useState(false)
-    const [profileError, setProfileError] = useState('')
+    const [invitationLink, setInvitationLink] = useState('')
+    const [linkCopied, setLinkCopied] = useState(false)
+    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+    const [deleting, setDeleting] = useState(false)
+    const [promoting, setPromoting] = useState<string | null>(null)
 
     // Super Admin states
     const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null)
@@ -75,11 +62,19 @@ export default function SettingsPage() {
         if (!userData) return
 
         setUser(userData)
-        setProfileName(userData.full_name || '')
-        setProfileJobTitle(userData.job_title || '')
-        setProfileJoinDate(userData.company_join_date || '')
         setIsSuperAdmin(SUPER_ADMIN_EMAILS.has(userData.email.toLowerCase()))
-        setIsAdmin(userData?.role === 'admin' || userData?.role === 'super_admin')
+
+        // Check if user is admin of their organization
+        if (userData.organization_id) {
+            const { data: userOrgData } = await supabase
+                .from('user_organizations')
+                .select('role')
+                .eq('user_id', session.user.id)
+                .eq('organization_id', userData.organization_id)
+                .single()
+
+            setIsAdmin(userOrgData?.role === 'admin' || userOrgData?.role === 'super_admin')
+        }
 
         // Load organization
         if (userData.organization_id) {
@@ -91,28 +86,13 @@ export default function SettingsPage() {
 
             setOrganization(orgData)
 
-            // Load members with expanded fields
+            // Load members
             const { data: membersData } = await supabase
-                .from('users')
-                .select('id, email, full_name, role, job_title, company_join_date, created_at')
+                .from('user_organizations')
+                .select('*, users(id, email, full_name, last_sign_in_at)')
                 .eq('organization_id', userData.organization_id)
 
             setMembers(membersData || [])
-
-            // Fetch report counts per member in parallel
-            if (membersData && membersData.length > 0) {
-                const counts: Record<string, number> = {}
-                await Promise.all(
-                    membersData.map(async (m: any) => {
-                        const { count } = await supabase
-                            .from('disease_reports')
-                            .select('*', { count: 'exact', head: true })
-                            .eq('created_by', m.id)
-                        counts[m.id] = count || 0
-                    })
-                )
-                setMemberReportCounts(counts)
-            }
         }
 
         // Load all organizations for super admin
@@ -128,65 +108,6 @@ export default function SettingsPage() {
         setLoading(false)
     }
 
-    const handleSaveProfile = async () => {
-        setSavingProfile(true)
-        setProfileError('')
-
-        const { error } = await supabase
-            .from('users')
-            .update({
-                full_name: profileName,
-                job_title: profileJobTitle || null,
-                company_join_date: profileJoinDate || null,
-            })
-            .eq('id', user.id)
-
-        if (error) {
-            setProfileError('Failed to save changes. Please try again.')
-        } else {
-            setUser({ ...user, full_name: profileName, job_title: profileJobTitle, company_join_date: profileJoinDate })
-            setProfileSaved(true)
-            setTimeout(() => setProfileSaved(false), 3000)
-        }
-        setSavingProfile(false)
-    }
-
-    const handleInviteMember = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setInviteError('')
-        setInviting(true)
-
-        try {
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
-            const res = await fetch('/api/invitations/send', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ email: inviteEmail, job_title: inviteJobTitle }),
-            })
-
-            const data = await res.json()
-
-            if (!res.ok) {
-                setInviteError(data.error || 'Failed to send invitation')
-                return
-            }
-
-            setInviteSuccess(true)
-            setInviteEmail('')
-            setInviteJobTitle('')
-            setTimeout(() => {
-                setInviteSuccess(false)
-                setShowInviteModal(false)
-            }, 2000)
-        } catch {
-            setInviteError('Failed to send invitation. Please try again.')
-        } finally {
-            setInviting(false)
-        }
-    }
-
     const copyShareCode = () => {
         if (organization?.share_code) {
             navigator.clipboard.writeText(organization.share_code)
@@ -195,31 +116,65 @@ export default function SettingsPage() {
         }
     }
 
-    const handleChangeRole = async (userId: string, newRole: 'admin' | 'member') => {
-        setChangingRole(userId)
+    const handleInviteMember = async () => {
+        if (!inviteEmail || !organization?.id) return
+
+        setInviting(true)
         try {
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
-            const response = await fetch('/api/admin/members/role', {
+            const response = await fetch('/api/invitations/send', {
                 method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ userId, newRole }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: inviteEmail,
+                    organizationId: organization.id
+                })
             })
 
             const data = await response.json()
 
             if (!response.ok) {
-                alert(data.error || 'Failed to update role')
+                alert(data.error || 'Failed to create invitation')
                 return
             }
 
-            await loadSettings()
+            setInvitationLink(data.invitation_link)
         } catch (error) {
-            console.error('Role change error:', error)
-            alert('Failed to update role')
+            console.error('Invite error:', error)
+            alert('Failed to create invitation')
         } finally {
-            setChangingRole(null)
+            setInviting(false)
+        }
+    }
+
+    const handlePromoteToAdmin = async (userId: string) => {
+        if (!organization?.id) return
+
+        setPromoting(userId)
+        try {
+            const response = await fetch('/api/members/promote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    organizationId: organization.id
+                })
+            })
+
+            const data = await response.json()
+
+            if (!response.ok) {
+                alert(data.error || 'Failed to promote member')
+                return
+            }
+
+            // Refresh members list
+            await loadSettings()
+            alert('Member promoted to admin successfully!')
+        } catch (error) {
+            console.error('Promote error:', error)
+            alert('Failed to promote member')
+        } finally {
+            setPromoting(null)
         }
     }
 
@@ -228,12 +183,9 @@ export default function SettingsPage() {
 
         setDeleting(true)
         try {
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
-            const response = await fetch('/api/admin/members/delete', {
+            const response = await fetch('/api/members/delete', {
                 method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userId,
                     organizationId: organization.id
@@ -272,8 +224,8 @@ export default function SettingsPage() {
             setLoadingOrgMembers(orgId)
             try {
                 const { data } = await supabase
-                    .from('users')
-                    .select('id, email, full_name, role, created_at')
+                    .from('user_organizations')
+                    .select('*, users(id, email, full_name, last_sign_in_at)')
                     .eq('organization_id', orgId)
 
                 setOrgMembers(prev => ({
@@ -290,12 +242,9 @@ export default function SettingsPage() {
 
     const handleDeleteOrg = async (orgId: string) => {
         try {
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
             const response = await fetch('/api/admin/organizations/delete', {
                 method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ organizationId: orgId })
             })
 
@@ -321,12 +270,9 @@ export default function SettingsPage() {
         if (!confirm('Are you sure you want to remove this member?')) return
 
         try {
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
             const response = await fetch('/api/admin/members/delete', {
                 method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, organizationId: orgId })
             })
 
@@ -334,8 +280,8 @@ export default function SettingsPage() {
 
             // Refresh local state for this org
             const { data } = await supabase
-                .from('users')
-                .select('id, email, full_name, role, created_at')
+                .from('user_organizations')
+                .select('*, users(id, email, full_name, last_sign_in_at)')
                 .eq('organization_id', orgId)
 
             setOrgMembers(prev => ({
@@ -407,82 +353,33 @@ export default function SettingsPage() {
             {activeTab === 'profile' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                     <h2 className="text-xl font-semibold text-gray-900 mb-6">Profile Information</h2>
-                    <div className="space-y-4 max-w-lg">
-                        {/* Email — read-only */}
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                            <input
+                                type="text"
+                                value={user?.full_name || ''}
+                                readOnly
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                            />
+                        </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                             <input
                                 type="email"
                                 value={user?.email || ''}
                                 readOnly
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
                             />
                         </div>
-                        {/* Role — read-only */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
                             <input
                                 type="text"
                                 value={user?.role || ''}
                                 readOnly
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 capitalize cursor-not-allowed"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 capitalize"
                             />
-                        </div>
-                        {/* Full Name — editable */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                            <input
-                                type="text"
-                                value={profileName}
-                                onChange={(e) => setProfileName(e.target.value)}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                                placeholder="Your full name"
-                            />
-                        </div>
-                        {/* Job Title — editable dropdown */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Job Title</label>
-                            <select
-                                value={profileJobTitle}
-                                onChange={(e) => setProfileJobTitle(e.target.value)}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                            >
-                                <option value="">Select a job title</option>
-                                {JOB_TITLES.map((t) => (
-                                    <option key={t} value={t}>{t}</option>
-                                ))}
-                            </select>
-                        </div>
-                        {/* Company Join Date — editable */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Company Join Date</label>
-                            <input
-                                type="date"
-                                value={profileJoinDate}
-                                onChange={(e) => setProfileJoinDate(e.target.value)}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                            />
-                        </div>
-
-                        {/* Error / Success feedback */}
-                        {profileError && (
-                            <p className="text-sm text-red-600">{profileError}</p>
-                        )}
-                        {profileSaved && (
-                            <div className="flex items-center gap-2 text-green-600 text-sm">
-                                <Check className="w-4 h-4" />
-                                Profile updated successfully
-                            </div>
-                        )}
-
-                        <div className="pt-2">
-                            <button
-                                onClick={handleSaveProfile}
-                                disabled={savingProfile}
-                                className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
-                            >
-                                {savingProfile ? 'Saving...' : 'Save Changes'}
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -549,10 +446,10 @@ export default function SettingsPage() {
                             </div>
                             {isAdmin && (
                                 <button
-                                    onClick={() => { setShowInviteModal(true); setInviteError(''); setInviteSuccess(false) }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition text-sm font-medium"
+                                    onClick={() => setShowInviteModal(true)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
                                 >
-                                    <Mail className="w-4 h-4" />
+                                    <UserPlus className="w-4 h-4" />
                                     Invite Member
                                 </button>
                             )}
@@ -561,14 +458,25 @@ export default function SettingsPage() {
                             <table className="w-full">
                                 <thead className="bg-gray-50 border-b border-gray-200">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Title</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reports Made</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company Join Date</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Name
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Email
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Role
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Joined
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Last Active
+                                        </th>
                                         {isAdmin && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Actions
+                                            </th>
                                         )}
                                     </tr>
                                 </thead>
@@ -577,17 +485,14 @@ export default function SettingsPage() {
                                         <tr key={member.id} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm font-medium text-gray-900">
-                                                    {member.full_name || 'N/A'}
-                                                    {member.id === user?.id && (
+                                                    {member.users?.full_name || 'N/A'}
+                                                    {member.user_id === user?.id && (
                                                         <span className="ml-2 text-xs text-gray-500">(You)</span>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                                                {member.email}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                {member.job_title || '—'}
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm text-gray-900">{member.users?.email}</div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${member.role === 'admin'
@@ -597,45 +502,29 @@ export default function SettingsPage() {
                                                     {member.role}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                {memberReportCounts[member.id] ?? '—'}
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {new Date(member.joined_at).toLocaleDateString()}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {member.company_join_date
-                                                    ? new Date(member.company_join_date).toLocaleDateString()
-                                                    : '—'}
+                                                {formatDate(member.users?.last_sign_in_at)}
                                             </td>
                                             {isAdmin && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                                                     <div className="flex items-center justify-end gap-2">
-                                                        {/* Role toggle — super_admin only, not for self or other super_admins */}
-                                                        {isSuperAdmin && member.id !== user?.id && member.role !== 'super_admin' && (
-                                                            member.role === 'member' ? (
-                                                                <button
-                                                                    onClick={() => handleChangeRole(member.id, 'admin')}
-                                                                    disabled={changingRole === member.id}
-                                                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition disabled:opacity-50"
-                                                                >
-                                                                    <Shield className="w-3.5 h-3.5" />
-                                                                    {changingRole === member.id ? 'Saving...' : 'Make Admin'}
-                                                                </button>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={() => handleChangeRole(member.id, 'member')}
-                                                                    disabled={changingRole === member.id}
-                                                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-lg hover:bg-amber-100 transition disabled:opacity-50"
-                                                                >
-                                                                    <Shield className="w-3.5 h-3.5" />
-                                                                    {changingRole === member.id ? 'Saving...' : 'Remove Admin'}
-                                                                </button>
-                                                            )
-                                                        )}
-                                                        {/* Delete — visible to admin+super_admin per permission rules */}
-                                                        {member.id !== user?.id &&
-                                                         member.role !== 'super_admin' &&
-                                                         (isSuperAdmin || (isAdmin && member.role === 'member')) && (
+                                                        {member.role !== 'admin' && member.user_id !== user?.id && (
                                                             <button
-                                                                onClick={() => setDeleteConfirm(member.id)}
+                                                                onClick={() => handlePromoteToAdmin(member.user_id)}
+                                                                disabled={promoting === member.user_id}
+                                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition disabled:opacity-50"
+                                                                title="Promote to Admin"
+                                                            >
+                                                                <Shield className="w-3.5 h-3.5" />
+                                                                {promoting === member.user_id ? 'Promoting...' : 'Promote'}
+                                                            </button>
+                                                        )}
+                                                        {member.user_id !== user?.id && (
+                                                            <button
+                                                                onClick={() => setDeleteConfirm(member.user_id)}
                                                                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition"
                                                                 title="Delete Member"
                                                             >
@@ -653,7 +542,7 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
-                    {/* Invite Member Modal */}
+                    {/* Create Invitation Modal */}
                     {showInviteModal && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                             <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
@@ -662,74 +551,111 @@ export default function SettingsPage() {
                                         <div className="p-2 bg-primary-100 rounded-lg">
                                             <Mail className="w-5 h-5 text-primary-600" />
                                         </div>
-                                        <h3 className="text-lg font-semibold text-gray-900">Invite Member</h3>
+                                        <h3 className="text-lg font-semibold text-gray-900">Create Invitation</h3>
                                     </div>
                                     <button
-                                        onClick={() => setShowInviteModal(false)}
-                                        className="p-1 hover:bg-gray-100 rounded-lg transition"
+                                        onClick={() => {
+                                            setShowInviteModal(false)
+                                            setInviteEmail('')
+                                            setInvitationLink('')
+                                            setLinkCopied(false)
+                                        }}
+                                        className="text-gray-400 hover:text-gray-600 transition"
                                     >
-                                        <X className="w-5 h-5 text-gray-500" />
+                                        <X className="w-5 h-5" />
                                     </button>
                                 </div>
-                                <form onSubmit={handleInviteMember}>
-                                    <div className="p-6 space-y-4">
-                                        {inviteError && (
-                                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                                                {inviteError}
-                                            </div>
-                                        )}
-                                        {inviteSuccess && (
-                                            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-                                                <Check className="w-4 h-4" />
-                                                Invitation sent successfully!
-                                            </div>
-                                        )}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Email Address <span className="text-red-500">*</span>
-                                            </label>
+                                <div className="p-6">
+                                    {invitationLink ? (
+                                        <div className="space-y-4">
+                                            <p className="text-sm text-gray-600">
+                                                Invitation created! Share this link with the new member:
+                                            </p>
                                             <input
-                                                type="email"
-                                                value={inviteEmail}
-                                                onChange={(e) => setInviteEmail(e.target.value)}
-                                                required
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition text-sm"
-                                                placeholder="colleague@example.com"
+                                                type="text"
+                                                readOnly
+                                                value={invitationLink}
+                                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-mono text-gray-700 cursor-text"
                                             />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Job Title</label>
-                                            <select
-                                                value={inviteJobTitle}
-                                                onChange={(e) => setInviteJobTitle(e.target.value)}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition text-sm"
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(invitationLink)
+                                                    setLinkCopied(true)
+                                                    setTimeout(() => setLinkCopied(false), 2000)
+                                                }}
+                                                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition text-sm font-medium"
                                             >
-                                                <option value="">Select a job title (optional)</option>
-                                                {JOB_TITLES.map((t) => (
-                                                    <option key={t} value={t}>{t}</option>
-                                                ))}
-                                            </select>
+                                                {linkCopied ? (
+                                                    <>
+                                                        <Check className="w-4 h-4" />
+                                                        Link copied!
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy className="w-4 h-4" />
+                                                        Copy Link
+                                                    </>
+                                                )}
+                                            </button>
+                                            <p className="text-xs text-gray-500">This link expires in 7 days</p>
                                         </div>
-                                    </div>
-                                    <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3">
+                                    ) : (
+                                        <>
+                                            <p className="text-sm text-gray-600 mb-4">
+                                                Create an invitation link for <strong>{organization?.name}</strong>.
+                                                The recipient will be able to create their account using this link.
+                                            </p>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Email Address
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    value={inviteEmail}
+                                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                                    placeholder="colleague@example.com"
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                                    onKeyPress={(e) => e.key === 'Enter' && handleInviteMember()}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                                <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3">
+                                    {invitationLink ? (
                                         <button
-                                            type="button"
-                                            onClick={() => setShowInviteModal(false)}
-                                            disabled={inviting}
-                                            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition disabled:opacity-50 text-sm"
+                                            onClick={() => {
+                                                setShowInviteModal(false)
+                                                setInviteEmail('')
+                                                setInvitationLink('')
+                                                setLinkCopied(false)
+                                            }}
+                                            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
                                         >
-                                            Cancel
+                                            Close
                                         </button>
-                                        <button
-                                            type="submit"
-                                            disabled={inviting || inviteSuccess}
-                                            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                                        >
-                                            <Mail className="w-4 h-4" />
-                                            {inviting ? 'Sending...' : 'Send Invitation'}
-                                        </button>
-                                    </div>
-                                </form>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    setShowInviteModal(false)
+                                                    setInviteEmail('')
+                                                }}
+                                                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={handleInviteMember}
+                                                disabled={!inviteEmail || inviting}
+                                                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {inviting ? 'Generating...' : 'Generate Link'}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -746,8 +672,8 @@ export default function SettingsPage() {
                                 </div>
                                 <div className="p-6">
                                     <p className="text-sm text-gray-600">
-                                        This member's disease reports will be reassigned to Super Admin.
-                                        Their account will be permanently deleted.
+                                        Are you sure you want to remove this member from the organization?
+                                        They will lose access to all organization data.
                                     </p>
                                     <p className="text-sm text-red-600 mt-2 font-medium">
                                         This action cannot be undone.
@@ -762,7 +688,7 @@ export default function SettingsPage() {
                                         Cancel
                                     </button>
                                     <button
-                                        onClick={() => handleDeleteMember(deleteConfirm!)}
+                                        onClick={() => handleDeleteMember(deleteConfirm)}
                                         disabled={deleting}
                                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
@@ -806,8 +732,8 @@ export default function SettingsPage() {
                             </thead>
                             <tbody className="divide-y divide-gray-200">
                                 {allOrgs.map((org) => (
-                                    <Fragment key={org.id}>
-                                        <tr className="hover:bg-gray-50 transition cursor-pointer" onClick={() => handleExpandOrg(org.id)}>
+                                    <>
+                                        <tr key={org.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => handleExpandOrg(org.id)}>
                                             <td className="px-6 py-4">
                                                 {expandedOrgId === org.id ? (
                                                     <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -899,7 +825,7 @@ export default function SettingsPage() {
                                                 </td>
                                             </tr>
                                         )}
-                                    </Fragment>
+                                    </>
                                 ))}
                             </tbody>
                         </table>

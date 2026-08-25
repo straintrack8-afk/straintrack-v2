@@ -22,8 +22,13 @@ export interface Organization {
     updated_at: string
 }
 
-// NOTE: user_organizations table removed. A user's organization membership
-// is determined solely by users.organization_id and users.role.
+export interface UserOrganization {
+    id: string
+    user_id: string
+    organization_id: string
+    role: 'admin' | 'member'
+    joined_at: string
+}
 
 export interface Farm {
     id: string
@@ -35,6 +40,7 @@ export interface Farm {
     animal_type: 'Swine' | 'Poultry' | null
     farm_type: string | null
     chicken_type: string | null
+    capacity?: number | null
     created_at: string
     updated_at: string
 }

@@ -36,6 +36,7 @@ interface FormData {
     animal_type: 'Swine' | 'Poultry' | null
     farm_type: string | null
     chicken_type: string | null
+    capacity: string
 }
 
 export default function FarmsPage() {
@@ -55,12 +56,13 @@ export default function FarmsPage() {
         longitude: null,
         animal_type: null,
         farm_type: null,
-        chicken_type: null
+        chicken_type: null,
+        capacity: ''
     })
     const [submitting, setSubmitting] = useState(false)
     const [gettingLocation, setGettingLocation] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
-    const [animalFilter, setAnimalFilter] = useState<string>('All')
+    const [animalFilter, setAnimalFilter] = useState<string>('all')
     const [sortBy, setSortBy] = useState<'name' | 'location' | 'animal_type'>('name')
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
@@ -161,7 +163,8 @@ export default function FarmsPage() {
             longitude: farm.longitude,
             animal_type: farm.animal_type,
             farm_type: farm.farm_type,
-            chicken_type: farm.chicken_type
+            chicken_type: farm.chicken_type,
+            capacity: farm.capacity ? farm.capacity.toString() : ''
         })
     }
 
@@ -197,7 +200,8 @@ export default function FarmsPage() {
             longitude: null,
             animal_type: null,
             farm_type: null,
-            chicken_type: null
+            chicken_type: null,
+            capacity: ''
         })
         setShowAddForm(false)
         setSelectedFarm(null)
@@ -228,7 +232,8 @@ export default function FarmsPage() {
                     longitude: formData.longitude,
                     animal_type: formData.animal_type,
                     farm_type: formData.farm_type,
-                    chicken_type: formData.chicken_type
+                    chicken_type: formData.chicken_type,
+                    capacity: formData.capacity ? parseInt(formData.capacity) : null
                 })
                 .eq('id', selectedFarm.id)
 
@@ -249,7 +254,8 @@ export default function FarmsPage() {
                     longitude: formData.longitude,
                     animal_type: formData.animal_type,
                     farm_type: formData.farm_type,
-                    chicken_type: formData.chicken_type
+                    chicken_type: formData.chicken_type,
+                    capacity: formData.capacity ? parseInt(formData.capacity) : null
                 })
 
             if (!error) {
@@ -447,6 +453,26 @@ export default function FarmsPage() {
                             </div>
                         )}
 
+                        {/* Section 5: Capacity */}
+                        <div className="space-y-4">
+                            <h4 className="font-medium text-gray-900 border-b pb-2">
+                                Farm Capacity
+                            </h4>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Capacity (Head)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={formData.capacity}
+                                    onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                    placeholder="Enter max capacity"
+                                />
+                            </div>
+                        </div>
+
                         {/* Submit Buttons */}
                         <div className="flex gap-3 pt-4 border-t">
                             <button
@@ -465,231 +491,246 @@ export default function FarmsPage() {
                             </button>
                         </div>
                     </form>
-                </div>
-            )}
+                </div >
+            )
+            }
 
             {/* Farm Detail Card */}
-            {selectedFarm && !isEditing && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center">
-                            <div className="p-3 bg-primary-100 rounded-lg mr-4">
-                                <Building2 className="w-8 h-8 text-primary-600" />
+            {
+                selectedFarm && !isEditing && (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center">
+                                <div className="p-3 bg-primary-100 rounded-lg mr-4">
+                                    <Building2 className="w-8 h-8 text-primary-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-semibold text-gray-900">{selectedFarm.name}</h3>
+                                    <p className="text-sm text-gray-600">{selectedFarm.location}</p>
+                                </div>
                             </div>
-                            <div>
-                                <h3 className="text-xl font-semibold text-gray-900">{selectedFarm.name}</h3>
-                                <p className="text-sm text-gray-600">{selectedFarm.location}</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setSelectedFarm(null)}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition"
-                        >
-                            <X className="w-5 h-5 text-gray-500" />
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <p className="text-sm text-gray-600">Animal Type</p>
-                            <p className="font-medium text-gray-900">{selectedFarm.animal_type || '-'}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-600">Farm Type</p>
-                            <p className="font-medium text-gray-900">{selectedFarm.farm_type || '-'}</p>
-                        </div>
-                        {selectedFarm.chicken_type && (
-                            <div>
-                                <p className="text-sm text-gray-600">Chicken Type</p>
-                                <p className="font-medium text-gray-900">{selectedFarm.chicken_type}</p>
-                            </div>
-                        )}
-                        {selectedFarm.latitude && selectedFarm.longitude && (
-                            <div>
-                                <p className="text-sm text-gray-600">GPS Coordinates</p>
-                                <p className="font-medium text-gray-900">
-                                    {selectedFarm.latitude.toFixed(6)}, {selectedFarm.longitude.toFixed(6)}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-
-                    {isAdmin && (
-                        <div className="flex gap-3 pt-4 border-t">
                             <button
-                                onClick={() => handleEditClick(selectedFarm)}
-                                className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
+                                onClick={() => setSelectedFarm(null)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition"
                             >
-                                <Edit2 className="w-4 h-4 mr-2" />
-                                Edit Farm
-                            </button>
-                            <button
-                                onClick={() => handleDeleteFarm(selectedFarm.id)}
-                                className="flex items-center px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition"
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete Farm
+                                <X className="w-5 h-5 text-gray-500" />
                             </button>
                         </div>
-                    )}
-                </div>
-            )}
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <p className="text-sm text-gray-600">Animal Type</p>
+                                <p className="font-medium text-gray-900">{selectedFarm.animal_type || '-'}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-600">Farm Type</p>
+                                <p className="font-medium text-gray-900">{selectedFarm.farm_type || '-'}</p>
+                            </div>
+                            {selectedFarm.chicken_type && (
+                                <div>
+                                    <p className="text-sm text-gray-600">Chicken Type</p>
+                                    <p className="font-medium text-gray-900">{selectedFarm.chicken_type}</p>
+                                </div>
+                            )}
+                            {selectedFarm.capacity && (
+                                <div>
+                                    <p className="text-sm text-gray-600">Capacity</p>
+                                    <p className="font-medium text-gray-900">{selectedFarm.capacity.toLocaleString()} Head</p>
+                                </div>
+                            )}
+                            {selectedFarm.latitude && selectedFarm.longitude && (
+                                <div>
+                                    <p className="text-sm text-gray-600">GPS Coordinates</p>
+                                    <p className="font-medium text-gray-900">
+                                        {selectedFarm.latitude.toFixed(6)}, {selectedFarm.longitude.toFixed(6)}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        {
+                            isAdmin && (
+                                <div className="flex gap-3 pt-4 border-t">
+                                    <button
+                                        onClick={() => handleEditClick(selectedFarm)}
+                                        className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
+                                    >
+                                        <Edit2 className="w-4 h-4 mr-2" />
+                                        Edit Farm
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteFarm(selectedFarm.id)}
+                                        className="flex items-center px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition"
+                                    >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Delete Farm
+                                    </button>
+                                </div>
+                            )
+                        }
+                    </div >
+                )
+            }
 
             {/* Search & Filter Bar */}
-            {farms.length > 0 && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                    <div className="flex items-center gap-4 flex-wrap">
-                        <div className="flex-1 min-w-[200px] relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input
-                                type="text"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                placeholder="Search farms..."
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                            />
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setAnimalFilter('All')}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition ${animalFilter === 'All'
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                    }`}
-                            >
-                                All
-                            </button>
-                            <button
-                                onClick={() => setAnimalFilter('Swine')}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition ${animalFilter === 'Swine'
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                    }`}
-                            >
-                                Swine
-                            </button>
-                            <button
-                                onClick={() => setAnimalFilter('Poultry')}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition ${animalFilter === 'Poultry'
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                    }`}
-                            >
-                                Poultry
-                            </button>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                            {filteredFarms.length} of {farms.length} farms
+            {
+                farms.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <div className="flex items-center gap-4 flex-wrap">
+                            <div className="flex-1 min-w-[200px] relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Search farms..."
+                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setAnimalFilter('All')}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${animalFilter === 'All'
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    All
+                                </button>
+                                <button
+                                    onClick={() => setAnimalFilter('Swine')}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${animalFilter === 'Swine'
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    Swine
+                                </button>
+                                <button
+                                    onClick={() => setAnimalFilter('Poultry')}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${animalFilter === 'Poultry'
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    Poultry
+                                </button>
+                            </div>
+                            <div className="text-sm text-gray-600">
+                                {filteredFarms.length} of {farms.length} farms
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Farms Table */}
-            {farms.length === 0 ? (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-                    <Building2 className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No farms yet</h3>
-                    <p className="text-gray-600 mb-6">Get started by adding your first farm location</p>
-                    <button
-                        onClick={() => setShowAddForm(true)}
-                        className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-                    >
-                        <Plus className="w-5 h-5 mr-2" />
-                        Add Farm
-                    </button>
-                </div>
-            ) : (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-gray-50 sticky top-0 z-10">
-                                <tr>
-                                    <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
-                                        onClick={() => handleSort('name')}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            Farm Name
-                                            <ArrowUpDown className="w-4 h-4" />
-                                        </div>
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Animal Type
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Farm Type
-                                    </th>
-                                    <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
-                                        onClick={() => handleSort('location')}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            Location
-                                            <ArrowUpDown className="w-4 h-4" />
-                                        </div>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200">
-                                {filteredFarms.map((farm) => (
-                                    <tr
-                                        key={farm.id}
-                                        onClick={() => handleRowClick(farm)}
-                                        className="hover:bg-gray-50 transition cursor-pointer"
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center">
-                                                <div className="p-2 bg-primary-100 rounded-lg mr-3">
-                                                    <Building2 className="w-5 h-5 text-primary-600" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-sm font-medium text-gray-900">{farm.name}</div>
-                                                    {farm.chicken_type && (
-                                                        <div className="text-xs text-gray-500">{farm.chicken_type}</div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="text-sm text-gray-700">
-                                                {farm.animal_type || '-'}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="text-sm text-gray-700">{farm.farm_type || '-'}</span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {farm.location ? (
-                                                <div>
-                                                    <div className="flex items-center text-sm text-gray-700">
-                                                        <MapPin className="w-4 h-4 mr-1 text-gray-400" />
-                                                        {farm.location}
-                                                    </div>
-                                                    {farm.latitude && farm.longitude && (
-                                                        <div className="text-xs text-gray-500 mt-1">
-                                                            {farm.latitude.toFixed(4)}, {farm.longitude.toFixed(4)}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <span className="text-sm text-gray-400">No location</span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+            {
+                farms.length === 0 ? (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                        <Building2 className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No farms yet</h3>
+                        <p className="text-gray-600 mb-6">Get started by adding your first farm location</p>
+                        <button
+                            onClick={() => setShowAddForm(true)}
+                            className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
+                        >
+                            <Plus className="w-5 h-5 mr-2" />
+                            Add Farm
+                        </button>
                     </div>
-
-                    {filteredFarms.length === 0 && searchTerm && (
-                        <div className="text-center py-12">
-                            <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                            <p className="text-gray-600">No farms found matching "{searchTerm}"</p>
+                ) : (
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-gray-50 sticky top-0 z-10">
+                                    <tr>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                                            onClick={() => handleSort('name')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                Farm Name
+                                                <ArrowUpDown className="w-4 h-4" />
+                                            </div>
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Animal Type
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Farm Type
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                                            onClick={() => handleSort('location')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                Location
+                                                <ArrowUpDown className="w-4 h-4" />
+                                            </div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {filteredFarms.map((farm) => (
+                                        <tr
+                                            key={farm.id}
+                                            onClick={() => handleRowClick(farm)}
+                                            className="hover:bg-gray-50 transition cursor-pointer"
+                                        >
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center">
+                                                    <div className="p-2 bg-primary-100 rounded-lg mr-3">
+                                                        <Building2 className="w-5 h-5 text-primary-600" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm font-medium text-gray-900">{farm.name}</div>
+                                                        {farm.chicken_type && (
+                                                            <div className="text-xs text-gray-500">{farm.chicken_type}</div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-sm text-gray-700">
+                                                    {farm.animal_type || '-'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-sm text-gray-700">{farm.farm_type || '-'}</span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {farm.location ? (
+                                                    <div>
+                                                        <div className="flex items-center text-sm text-gray-700">
+                                                            <MapPin className="w-4 h-4 mr-1 text-gray-400" />
+                                                            {farm.location}
+                                                        </div>
+                                                        {farm.latitude && farm.longitude && (
+                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                {farm.latitude.toFixed(4)}, {farm.longitude.toFixed(4)}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-sm text-gray-400">No location</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
-                    )}
-                </div>
-            )}
-        </div>
+
+                        {filteredFarms.length === 0 && searchTerm && (
+                            <div className="text-center py-12">
+                                <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                                <p className="text-gray-600">No farms found matching "{searchTerm}"</p>
+                            </div>
+                        )}
+                    </div>
+                )
+            }
+        </div >
     )
 }

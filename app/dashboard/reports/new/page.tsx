@@ -105,22 +105,11 @@ export default function NewDiseaseReportPage() {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) throw new Error('Not authenticated')
 
-            const { data: userData } = await supabase
-                .from('users')
-                .select('organization_id')
-                .eq('id', session.user.id)
-                .single()
-
-            if (!userData?.organization_id) throw new Error('User has no organization assigned')
-
             const finalDiseaseName = formData.disease_name === 'Other' ? formData.disease_name_other : formData.disease_name
             const finalStrain = formData.strain_subtype === 'Other' ? formData.strain_subtype_other : formData.strain_subtype
             const finalOutbreakLocation = formData.outbreak_location === 'Other' ? formData.outbreak_location_other : formData.outbreak_location
 
-            console.log('[NewReport] organization_id being inserted:', userData.organization_id)
-
             const { data: report, error: reportError } = await supabase.from('disease_reports').insert({
-                organization_id: userData.organization_id,
                 farm_id: formData.farm_id, animal_species: formData.animal_species,
                 animal_category: formData.animal_category, animal_subcategory: formData.animal_subcategory || null,
                 outbreak_location: finalOutbreakLocation || null, total_population: parseInt(formData.total_population) || null,

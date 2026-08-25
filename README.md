@@ -1,6 +1,13 @@
-# StrainTrack V2
+# StrainTrack V2 - Flutter
 
 Disease surveillance system for livestock farms - monitoring and tracking disease outbreaks across poultry and swine farms.
+
+## 🚀 Now Multi-Platform!
+
+This application has been migrated from Next.js to **Flutter** for multi-platform support:
+- ✅ **Android** - Mobile app
+- ✅ **iOS** - Mobile app  
+- ✅ **Web** - Browser app
 
 ## Features
 
@@ -14,23 +21,23 @@ Disease surveillance system for livestock farms - monitoring and tracking diseas
 - **Farm Management** - Track farm locations, types, and animal populations
 - **Disease Reporting** - Record and monitor disease outbreaks with severity levels
 - **Interactive Maps** - Visualize farm locations and outbreak hotspots
-- **Email Invitations** - Invite new members via email (Resend integration)
+- **Member Invitations** - Invite new members via share code
 - **Flexible Strain Input** - Select from predefined strains or enter custom variants
 
 ## Tech Stack
 
-- **Frontend:** Next.js 14, React, TypeScript, Tailwind CSS
+- **Frontend:** Flutter 3.24+, Dart 3.5+
+- **State Management:** Riverpod
+- **Navigation:** GoRouter
 - **Backend:** Supabase (PostgreSQL, Authentication, RLS)
-- **Maps:** Leaflet
-- **Email:** Resend
-- **Deployment:** Vercel
+- **Maps:** flutter_map (OpenStreetMap tiles)
+- **Charts:** fl_chart
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
+- Flutter 3.24+ ([Install Flutter](https://docs.flutter.dev/get-started/install))
 - Supabase account
-- Resend account (for email invitations)
 
 ### Installation
 
@@ -42,33 +49,66 @@ cd straintrack-v2
 
 2. Install dependencies
 ```bash
-npm install
+flutter pub get
 ```
 
-3. Set up environment variables
+3. Run the app
 ```bash
-cp .env.example .env.local
+# Web
+flutter run -d chrome
+
+# Android
+flutter run -d android
+
+# iOS
+flutter run -d ios
 ```
 
-Edit `.env.local` with your credentials:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `RESEND_API_KEY`
-- `NEXT_PUBLIC_APP_URL`
+### Building for Production
 
-4. Run development server
 ```bash
-npm run dev
+# Web
+flutter build web
+
+# Android APK
+flutter build apk
+
+# Android App Bundle
+flutter build appbundle
+
+# iOS
+flutter build ios
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+## Project Structure
 
-## Database Setup
-
-Run the SQL migration files in Supabase SQL Editor:
-1. `FARM-ENHANCEMENT-MIGRATION.sql` - Farm schema
-2. `MEMBER-INVITATIONS-MIGRATION.sql` - Invitations system
-3. `DUMMY-DATA.sql` - Sample data (optional)
+```
+lib/
+├── main.dart              # App entry point
+├── config/
+│   ├── supabase_config.dart   # Supabase setup
+│   └── theme.dart             # App theme
+├── router/
+│   └── app_router.dart        # Navigation routes
+├── models/
+│   ├── user.dart
+│   ├── organization.dart
+│   ├── farm.dart
+│   └── disease_report.dart
+├── providers/
+│   ├── auth_provider.dart
+│   ├── organization_provider.dart
+│   └── dashboard_provider.dart
+└── screens/
+    ├── auth/           # Login, Signup
+    ├── onboarding/     # Onboarding flow
+    ├── organization/   # Create/Join org
+    ├── dashboard/      # Main dashboard
+    ├── farms/          # Farm management
+    ├── reports/        # Disease reports
+    ├── maps/           # Interactive maps
+    └── settings/       # Settings & members
+```
 
 ## Demo Accounts
 
@@ -77,25 +117,15 @@ Run the SQL migration files in Supabase SQL Editor:
   - Vaksindo Vietnam Animal Health
   - Street Fighter (demo data)
 
-## Project Structure
+## Environment Variables
 
+For production builds, set these environment variables:
+
+```bash
+flutter build web \
+  --dart-define=SUPABASE_URL=your_url \
+  --dart-define=SUPABASE_ANON_KEY=your_key
 ```
-├── app/                    # Next.js app directory
-│   ├── dashboard/         # Dashboard pages
-│   │   ├── farms/        # Farm management
-│   │   ├── reports/      # Disease reports
-│   │   ├── maps/         # Interactive maps
-│   │   └── settings/     # Organization settings
-│   └── api/              # API routes
-├── components/            # Reusable components
-├── contexts/             # React contexts
-├── lib/                  # Utilities and types
-└── public/               # Static assets
-```
-
-## Contributing
-
-This is a private project for demonstration purposes.
 
 ## License
 
@@ -103,5 +133,5 @@ Proprietary - All rights reserved
 
 ---
 
-**Last Updated:** January 9, 2026
-**Version:** 2.0.0
+**Last Updated:** January 12, 2026  
+**Version:** 2.0.0 (Flutter)
