@@ -1,33 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient(request)
+        const authHeader = request.headers.get('Authorization')
+        const token = authHeader?.replace('Bearer ', '')
 
-        // Check authentication
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
+        if (!token) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Get request body
-        const { email, organizationId } = await request.json()
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: `Bearer ${token}` } } }
+        )
 
-        if (!email || !organizationId) {
-            return NextResponse.json({ error: 'Email and organization ID required' }, { status: 400 })
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Verify user is admin of the organization
-        const { data: userOrg } = await supabase
-            .from('user_organizations')
-            .select('role')
-            .eq('user_id', session.user.id)
-            .eq('organization_id', organizationId)
+        // Verify caller role from public.users
+        const { data: caller } = await supabase
+            .from('users')
+            .select('role, organization_id')
+            .eq('id', user.id)
             .single()
 
-        if (!userOrg || !['admin', 'super_admin'].includes(userOrg.role)) {
+        if (!caller || !['admin', 'super_admin'].includes(caller.role)) {
             return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
+        }
+
+        // Get request body
+        const { email, job_title } = await request.json()
+
+        if (!email) {
+            return NextResponse.json({ error: 'Email is required' }, { status: 400 })
         }
 
         // Check if user already exists
@@ -45,7 +54,7 @@ export async function POST(request: NextRequest) {
         const { data: existingInvitation } = await supabase
             .from('organization_invitations')
             .select('id')
-            .eq('organization_id', organizationId)
+            .eq('organization_id', caller.organization_id)
             .eq('email', email.toLowerCase())
             .eq('status', 'pending')
             .single()
@@ -54,24 +63,6 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Invitation already sent to this email' }, { status: 400 })
         }
 
-        // Get organization details
-        const { data: organization } = await supabase
-            .from('organizations')
-            .select('name')
-            .eq('id', organizationId)
-            .single()
-
-        if (!organization) {
-            return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
-        }
-
-        // Get inviter details
-        const { data: inviter } = await supabase
-            .from('users')
-            .select('full_name, email')
-            .eq('id', session.user.id)
-            .single()
-
         // Create invitation record (expires in 7 days)
         const expiresAt = new Date()
         expiresAt.setDate(expiresAt.getDate() + 7)
@@ -79,9 +70,10 @@ export async function POST(request: NextRequest) {
         const { data: invitation, error: inviteError } = await supabase
             .from('organization_invitations')
             .insert({
-                organization_id: organizationId,
+                organization_id: caller.organization_id,
                 email: email.toLowerCase(),
-                invited_by: session.user.id,
+                invited_by: user.id,
+                job_title: job_title || null,
                 expires_at: expiresAt.toISOString(),
                 status: 'pending'
             })
