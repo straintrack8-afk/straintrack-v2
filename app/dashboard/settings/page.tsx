@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { User, Building2, Users, Settings as SettingsIcon, Copy, Check, Mail, UserPlus, Shield, Trash2, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SUPER_ADMIN_EMAILS = new Set(['straintrack8@gmail.com'])
+const JOB_TITLES = ['Technical', 'Sales', 'Manager', 'Veterinarian', 'Veterinary Technician', 'Other']
 
 export default function SettingsPage() {
     const router = useRouter()
@@ -15,6 +16,7 @@ export default function SettingsPage() {
     const [user, setUser] = useState<any>(null)
     const [organization, setOrganization] = useState<any>(null)
     const [members, setMembers] = useState<any[]>([])
+    const [memberReportCounts, setMemberReportCounts] = useState<Record<string, number>>({})
     const [isSuperAdmin, setIsSuperAdmin] = useState(false)
     const [isAdmin, setIsAdmin] = useState(false)
     const [allOrgs, setAllOrgs] = useState<any[]>([])
@@ -34,6 +36,8 @@ export default function SettingsPage() {
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
     const [deleting, setDeleting] = useState(false)
     const [promoting, setPromoting] = useState<string | null>(null)
+    const [changingRole, setChangingRole] = useState<string | null>(null)
+    const [inviteJobTitle, setInviteJobTitle] = useState('')
 
     // Super Admin states
     const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null)
@@ -88,11 +92,26 @@ export default function SettingsPage() {
 
             // Load members
             const { data: membersData } = await supabase
-                .from('user_organizations')
-                .select('*, users(id, email, full_name, last_sign_in_at)')
+                .from('users')
+                .select('id, email, full_name, role, job_title, company_join_date, created_at')
                 .eq('organization_id', userData.organization_id)
 
             setMembers(membersData || [])
+
+            // Fetch report counts per member in parallel
+            if (membersData && membersData.length > 0) {
+                const counts: Record<string, number> = {}
+                await Promise.all(
+                    membersData.map(async (m: any) => {
+                        const { count } = await supabase
+                            .from('disease_reports')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('created_by', m.id)
+                        counts[m.id] = count || 0
+                    })
+                )
+                setMemberReportCounts(counts)
+            }
         }
 
         // Load all organizations for super admin
@@ -121,11 +140,15 @@ export default function SettingsPage() {
 
         setInviting(true)
         try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
             const response = await fetch('/api/invitations/send', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     email: inviteEmail,
+                    job_title: inviteJobTitle,
                     organizationId: organization.id
                 })
             })
@@ -146,35 +169,31 @@ export default function SettingsPage() {
         }
     }
 
-    const handlePromoteToAdmin = async (userId: string) => {
-        if (!organization?.id) return
-
-        setPromoting(userId)
+    const handleChangeRole = async (userId: string, newRole: 'admin' | 'member') => {
+        setChangingRole(userId)
         try {
-            const response = await fetch('/api/members/promote', {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const response = await fetch('/api/admin/members/role', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId,
-                    organizationId: organization.id
-                })
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ userId, newRole })
             })
 
             const data = await response.json()
 
             if (!response.ok) {
-                alert(data.error || 'Failed to promote member')
+                alert(data.error || 'Failed to update role')
                 return
             }
 
-            // Refresh members list
             await loadSettings()
-            alert('Member promoted to admin successfully!')
         } catch (error) {
-            console.error('Promote error:', error)
-            alert('Failed to promote member')
+            console.error('Role change error:', error)
+            alert('Failed to update role')
         } finally {
-            setPromoting(null)
+            setChangingRole(null)
         }
     }
 
@@ -183,9 +202,12 @@ export default function SettingsPage() {
 
         setDeleting(true)
         try {
-            const response = await fetch('/api/members/delete', {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const response = await fetch('/api/admin/members/delete', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     userId,
                     organizationId: organization.id
@@ -202,7 +224,6 @@ export default function SettingsPage() {
             // Refresh members list
             await loadSettings()
             setDeleteConfirm(null)
-            alert('Member deleted successfully!')
         } catch (error) {
             console.error('Delete error:', error)
             alert('Failed to delete member')
@@ -465,13 +486,16 @@ export default function SettingsPage() {
                                             Email
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Job Title
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Role
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Joined
+                                            Reports Made
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Last Active
+                                            Company Join Date
                                         </th>
                                         {isAdmin && (
                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -485,14 +509,17 @@ export default function SettingsPage() {
                                         <tr key={member.id} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm font-medium text-gray-900">
-                                                    {member.users?.full_name || 'N/A'}
-                                                    {member.user_id === user?.id && (
+                                                    {member.full_name || 'N/A'}
+                                                    {member.id === user?.id && (
                                                         <span className="ml-2 text-xs text-gray-500">(You)</span>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="text-sm text-gray-900">{member.users?.email}</div>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                                {member.email}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                {member.job_title || '—'}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${member.role === 'admin'
@@ -502,29 +529,45 @@ export default function SettingsPage() {
                                                     {member.role}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {new Date(member.joined_at).toLocaleDateString()}
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                {memberReportCounts[member.id] ?? '—'}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {formatDate(member.users?.last_sign_in_at)}
+                                                {member.company_join_date
+                                                    ? new Date(member.company_join_date).toLocaleDateString()
+                                                    : '—'}
                                             </td>
                                             {isAdmin && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                                                     <div className="flex items-center justify-end gap-2">
-                                                        {member.role !== 'admin' && member.user_id !== user?.id && (
-                                                            <button
-                                                                onClick={() => handlePromoteToAdmin(member.user_id)}
-                                                                disabled={promoting === member.user_id}
-                                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition disabled:opacity-50"
-                                                                title="Promote to Admin"
-                                                            >
-                                                                <Shield className="w-3.5 h-3.5" />
-                                                                {promoting === member.user_id ? 'Promoting...' : 'Promote'}
-                                                            </button>
+                                                        {/* Role toggle — super_admin only, not for self or other super_admins */}
+                                                        {isSuperAdmin && member.id !== user?.id && member.role !== 'super_admin' && (
+                                                            member.role === 'member' ? (
+                                                                <button
+                                                                    onClick={() => handleChangeRole(member.id, 'admin')}
+                                                                    disabled={changingRole === member.id}
+                                                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition disabled:opacity-50"
+                                                                >
+                                                                    <Shield className="w-3.5 h-3.5" />
+                                                                    {changingRole === member.id ? 'Saving...' : 'Make Admin'}
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleChangeRole(member.id, 'member')}
+                                                                    disabled={changingRole === member.id}
+                                                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-lg hover:bg-amber-100 transition disabled:opacity-50"
+                                                                >
+                                                                    <Shield className="w-3.5 h-3.5" />
+                                                                    {changingRole === member.id ? 'Saving...' : 'Remove Admin'}
+                                                                </button>
+                                                            )
                                                         )}
-                                                        {member.user_id !== user?.id && (
+                                                        {/* Delete — visible to admin+super_admin, not for self or super_admin rows */}
+                                                        {member.id !== user?.id &&
+                                                         member.role !== 'super_admin' &&
+                                                         (isSuperAdmin || (isAdmin && member.role === 'member')) && (
                                                             <button
-                                                                onClick={() => setDeleteConfirm(member.user_id)}
+                                                                onClick={() => setDeleteConfirm(member.id)}
                                                                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition"
                                                                 title="Delete Member"
                                                             >
@@ -557,6 +600,7 @@ export default function SettingsPage() {
                                         onClick={() => {
                                             setShowInviteModal(false)
                                             setInviteEmail('')
+                                            setInviteJobTitle('')
                                             setInvitationLink('')
                                             setLinkCopied(false)
                                         }}
@@ -619,6 +663,21 @@ export default function SettingsPage() {
                                                     onKeyPress={(e) => e.key === 'Enter' && handleInviteMember()}
                                                 />
                                             </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Job Title
+                                                </label>
+                                                <select
+                                                    value={inviteJobTitle}
+                                                    onChange={(e) => setInviteJobTitle(e.target.value)}
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                                >
+                                                    <option value="">Select a job title</option>
+                                                    {JOB_TITLES.map((t) => (
+                                                        <option key={t} value={t}>{t}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
                                         </>
                                     )}
                                 </div>
@@ -628,6 +687,7 @@ export default function SettingsPage() {
                                             onClick={() => {
                                                 setShowInviteModal(false)
                                                 setInviteEmail('')
+                                                setInviteJobTitle('')
                                                 setInvitationLink('')
                                                 setLinkCopied(false)
                                             }}
@@ -641,6 +701,7 @@ export default function SettingsPage() {
                                                 onClick={() => {
                                                     setShowInviteModal(false)
                                                     setInviteEmail('')
+                                                    setInviteJobTitle('')
                                                 }}
                                                 className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
                                             >
