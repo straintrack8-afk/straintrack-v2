@@ -50,18 +50,13 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'User with this email already exists' }, { status: 400 })
         }
 
-        // Check for existing pending invitation
-        const { data: existingInvitation } = await supabase
+        // Delete any existing pending invitation for this email (replace, don't block)
+        await supabase
             .from('organization_invitations')
-            .select('id')
+            .delete()
             .eq('organization_id', caller.organization_id)
             .eq('email', email.toLowerCase())
             .eq('status', 'pending')
-            .single()
-
-        if (existingInvitation) {
-            return NextResponse.json({ error: 'Invitation already sent to this email' }, { status: 400 })
-        }
 
         // Create invitation record (expires in 7 days)
         const expiresAt = new Date()
