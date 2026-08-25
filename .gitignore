@@ -6,6 +6,7 @@ pubspec.yaml
 pubspec.lock
 *.iml
 *.docx
+*.dart
 ~$*
 node_modules/
 .next/
