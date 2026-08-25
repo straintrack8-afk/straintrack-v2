@@ -38,28 +38,31 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'User ID and Organization ID are required' }, { status: 400 })
         }
 
-        // 3. Delete Member from Organization
-        const { error: deleteError } = await supabase
-            .from('user_organizations')
-            .delete()
-            .eq('user_id', userId)
-            .eq('organization_id', organizationId)
+        // 3. Service role client for auth.users deletion
+        const adminClient = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
 
-        if (deleteError) {
-            console.error('Error deleting member:', deleteError)
-            return NextResponse.json({ error: 'Failed to delete member' }, { status: 500 })
+        // Reassign reports to super_admin first
+        const { data: superAdmin } = await adminClient
+            .from('users')
+            .select('id')
+            .eq('role', 'super_admin')
+            .single()
+
+        if (superAdmin) {
+            await adminClient
+                .from('disease_reports')
+                .update({ created_by: superAdmin.id })
+                .eq('created_by', userId)
         }
 
-        // 4. Also clear the organization_id from the users table (maintain consistency)
-        const { error: updateError } = await supabase
-            .from('users')
-            .update({ organization_id: null })
-            .eq('id', userId)
-            .eq('organization_id', organizationId) // Only if they are still in that org
-
-        if (updateError) {
-            // Log warning but don't fail, primary action was removing from user_organizations
-            console.warn('Warning: Failed to clear organization_id from users table:', updateError)
+        // Delete from auth.users (cascades to public.users via FK)
+        const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId)
+        if (deleteError) {
+            console.error('Delete error:', deleteError)
+            return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
         }
 
         return NextResponse.json({ success: true })
