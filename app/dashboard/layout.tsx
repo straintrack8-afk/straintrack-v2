@@ -12,7 +12,6 @@ import {
     LogOut,
     Menu,
     X,
-    ChevronDown,
     MapPin
 } from 'lucide-react'
 import Link from 'next/link'
@@ -170,27 +169,13 @@ export default function DashboardLayout({
                         </button>
                     </div>
 
-                    {/* Organization Info - Super Admin Only */}
-                    {isSuperAdmin && (
+                    {/* Organization Info */}
+                    {activeOrg && (
                         <div className="p-4 border-b border-gray-200">
-                            <div className="relative">
-                                <select
-                                    value={activeOrg?.id || ''}
-                                    onChange={(e) => {
-                                        const org = organizations.find(o => o.id === e.target.value)
-                                        setActiveOrg(org || null)
-                                    }}
-                                    className="w-full px-3 py-2 pr-8 bg-gray-50 border border-gray-300 rounded-lg text-sm font-medium appearance-none cursor-pointer hover:bg-gray-100 transition"
-                                >
-                                    {organizations.map(org => (
-                                        <option key={org.id} value={org.id}>
-                                            {org.name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-                                <p className="text-xs text-primary-600 mt-2 font-medium">Super Admin View</p>
-                            </div>
+                            <p className="text-sm font-semibold text-gray-900 truncate">{activeOrg.name}</p>
+                            {isSuperAdmin && (
+                                <p className="text-xs text-primary-600 mt-1 font-medium">Super Admin</p>
+                            )}
                         </div>
                     )}
 
