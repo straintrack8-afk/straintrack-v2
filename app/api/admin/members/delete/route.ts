@@ -1,16 +1,27 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
     try {
-        const supabase = await createClient()
-        const { userId, organizationId } = await request.json()
+        const authHeader = request.headers.get('Authorization')
+        const token = authHeader?.replace('Bearer ', '')
 
-        // 1. Check authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (!token) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
+        const supabase = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: `Bearer ${token}` } } }
+        )
+
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
         if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
+
+        const { userId, organizationId } = await request.json()
 
         // 2. Check Super Admin status
         const { data: userData, error: userError } = await supabase
