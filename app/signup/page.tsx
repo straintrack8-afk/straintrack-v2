@@ -92,6 +92,18 @@ function SignupForm() {
             if (authError) throw authError
             if (!authData.user) throw new Error('Failed to create account')
 
+            // Explicit sign in to ensure session is valid
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: invitation.email,
+                password
+            })
+
+            if (signInError) {
+                setError('Account created but could not sign in. Please login manually.')
+                router.push('/login')
+                return
+            }
+
             // Get session token for the API call
             const { data: { session } } = await supabase.auth.getSession()
             const token = session?.access_token
